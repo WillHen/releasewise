@@ -62,6 +62,36 @@ describe('SYSTEM_PROMPT', () => {
   it('tells the model not to add a version heading', () => {
     expect(SYSTEM_PROMPT.toLowerCase()).toContain('version heading');
   });
+
+  it('forbids bullets about tests and test coverage', () => {
+    // Regression guard: dry-run #3 produced "Comprehensive test suite
+    // covering..." even though the prompt told the AI to omit test
+    // commits. The explicit forbid list now calls out test topics.
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('tests');
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('test counts');
+  });
+
+  it('forbids naming internal implementation structures', () => {
+    // Regression guard: dry-run #3 produced "AI provider factory with
+    // Anthropic adapter, exponential-backoff retry wrapper". These
+    // words are now in an explicit forbid list in the prompt.
+    const lower = SYSTEM_PROMPT.toLowerCase();
+    for (const forbidden of [
+      'factory',
+      'adapter',
+      'wrapper',
+      'helper',
+      'schema',
+    ]) {
+      expect(lower).toContain(forbidden);
+    }
+  });
+
+  it('includes concrete bad-vs-good bullet examples', () => {
+    // Few-shot examples are more sticky than imperative rules alone.
+    expect(SYSTEM_PROMPT).toContain('BAD:');
+    expect(SYSTEM_PROMPT).toContain('GOOD:');
+  });
 });
 
 // --------- buildUserPrompt ---------

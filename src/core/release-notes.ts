@@ -31,11 +31,27 @@ Output rules:
 - Use Keep a Changelog section headings in this exact order, omitting empty sections: ### Added, ### Changed, ### Deprecated, ### Removed, ### Fixed, ### Security.
 - Each entry is a single bullet, sentence case, no trailing period.
 - Every bullet MUST be traceable to at least one commit in the provided list. If you cannot identify a specific commit that supports a bullet, omit the bullet. Do not invent, extrapolate, or embellish. Prefer fewer accurate bullets over more vague ones.
-- Write bullets at the level of user-visible capability, not module internals. Describe what the user can now do, not which files or classes changed. If several commits together compose a single user-facing capability (e.g. a new command built from 10 internal modules), write ONE bullet for the capability, not ten bullets for the modules. Do not name classes, functions, files, factories, wrappers, adapters, schemas, or other implementation structures unless they are part of the public API that the user directly calls or imports.
+- Write bullets at the level of user-visible capability, not module internals. Describe what the user can now do, not which files or classes changed. If several commits together compose a single user-facing capability, write ONE bullet for the capability, not many bullets for its parts.
 - Aim for roughly 5-15 bullets total across all sections. If you find yourself writing more, you are almost certainly describing implementation rather than user impact — collapse related bullets.
 - On a first release (when the user prompt says "Previous version: (none — first release)"), use ONLY the ### Added section. Do not produce Changed, Deprecated, Removed, Fixed, or Security sections — there is no prior behavior to change or fix from.
-- Avoid filler and puffery. Do not write phrases like "various improvements", "under the hood", "comprehensive test suite", "robust", "200+ tests", or "significantly improved". If the change is not a concrete, describable thing, leave it out.
-- Describe user-visible effects, not implementation details. Omit commits whose type is \`chore\`, \`ci\`, \`build\`, \`docs\`, \`style\`, \`test\`, or a \`refactor\` that does not change behavior — these are not user-facing.
+- ABSOLUTELY DO NOT write bullets about: tests, test coverage, test suites, test fixtures, CI workflows, lint/format tooling, build config, docs, internal refactors, or release-tooling dogfood. These are not user-facing regardless of how much code they represent. Omit them entirely. Do not mention test counts.
+- ABSOLUTELY DO NOT name internal implementation structures in bullets. Forbidden words anywhere in a bullet: "factory", "adapter", "wrapper", "helper", "schema", "constant", "interface", "module", "class", "utility". If you feel the need to use one of these words, the bullet is describing implementation and must be rewritten at the user-capability level OR dropped entirely.
+- Avoid filler and puffery: no "various improvements", "under the hood", "comprehensive", "robust", "significantly improved", "seamless".
+
+EXAMPLES of bad vs. good bullets:
+
+  BAD:  "AI provider factory with Anthropic adapter, exponential-backoff retry wrapper, and token estimation helper"
+  GOOD: "Anthropic-powered release notes generation, with automatic retry on transient API errors"
+
+  BAD:  "Semver parsing and formatting module with bump logic and package.json read/write utility"
+  GOOD: "Automatic semver bumping of package.json based on commit analysis, including prerelease labels"
+
+  BAD:  "Comprehensive test suite covering git operations, config loading, and release planning"
+  GOOD: (omit entirely — tests are not user-facing)
+
+  BAD:  "Zod schema for .releasewise.json with defaults for commit mode and AI provider settings"
+  GOOD: "Project configuration via .releasewise.json with sensible defaults"
+
 - Preserve "#123" style issue/PR references from the commits verbatim. The tool links them afterwards. Do NOT wrap them in backticks or markdown link syntax yourself.
 - Do not include a version heading or preamble — the tool adds those. Output the section headings and bullets only, nothing else.`;
 
