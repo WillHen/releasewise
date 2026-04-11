@@ -79,18 +79,25 @@ docs: clarify --dry-run vs --estimate in README
 1. `bun run lint` — ESLint over `src/` and `tests/`
 2. `bun run format:check` — Prettier in check mode
 3. `bun run typecheck` — `tsc --noEmit`
+4. `bun test` — full unit + integration test suite
 
-If any step fails, fix the issue before committing. Don't use `--no-verify`
-to skip hooks. Auto-fixable problems can be resolved with:
+If any step fails, fix the issue before committing. Never use `--no-verify`
+to skip hooks, and never commit with failing or skipped tests. Auto-fixable
+problems can be resolved with:
 
 ```
 bun run lint:fix    # ESLint auto-fix
 bun run format      # Prettier write
 ```
 
-Reminder: **linting and formatting apply to source code only, never to
-commit messages.** Commit messages follow the Conventional Commits rules
-documented above and are enforced by review, not tooling.
+If you're touching code covered by tests, run `bun test` directly as you
+iterate — it's much faster than the full `check` pipeline and gives
+focused feedback. Run `bun run check` as the last thing before you
+actually commit.
+
+Reminder: **linting, formatting, and tests apply to source code only,
+never to commit messages.** Commit messages follow the Conventional
+Commits rules documented above and are enforced by review, not tooling.
 
 ## Tooling
 
