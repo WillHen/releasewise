@@ -90,6 +90,33 @@ describe('buildUserPrompt', () => {
     expect(prompt).toContain('Previous version: (none');
   });
 
+  it('adds a first-release-only-Added reminder when previousVersion is null', () => {
+    const prompt = buildUserPrompt({
+      newVersion: '0.1.0',
+      previousVersion: null,
+      commits: [],
+      diff: '',
+      diffDroppedFiles: [],
+    });
+    expect(prompt).toContain('first release');
+    expect(prompt).toContain('### Added');
+    expect(prompt).toContain(
+      'Do not produce Changed, Deprecated, Removed, Fixed, or Security',
+    );
+  });
+
+  it('does NOT add the first-release reminder when previousVersion is set', () => {
+    const prompt = buildUserPrompt({
+      newVersion: '1.2.3',
+      previousVersion: '1.2.2',
+      commits: [],
+      diff: '',
+      diffDroppedFiles: [],
+    });
+    expect(prompt).not.toContain('Do not produce Changed');
+    expect(prompt).not.toContain('first release');
+  });
+
   it('lists commit subjects with short SHAs', () => {
     const prompt = buildUserPrompt({
       newVersion: '1.0.0',
