@@ -1,9 +1,3 @@
 [install]
-# Use exact versions for reproducible builds
+# Use caret ranges in package.json; lockfile pins exact versions.
 exact = false
-
-[test]
-# Bun test runner config
-root = "./tests"
-preload = []
-coverage = false
