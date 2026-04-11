@@ -72,6 +72,26 @@ docs: clarify --dry-run vs --estimate in README
 - Do not commit secrets. `.releasewise.local.json` and anything under
   `.releasewise/` are already in `.gitignore`.
 
+## Pre-commit checklist
+
+**Always run `bun run check` before every commit.** This runs, in order:
+
+1. `bun run lint` — ESLint over `src/` and `tests/`
+2. `bun run format:check` — Prettier in check mode
+3. `bun run typecheck` — `tsc --noEmit`
+
+If any step fails, fix the issue before committing. Don't use `--no-verify`
+to skip hooks. Auto-fixable problems can be resolved with:
+
+```
+bun run lint:fix    # ESLint auto-fix
+bun run format      # Prettier write
+```
+
+Reminder: **linting and formatting apply to source code only, never to
+commit messages.** Commit messages follow the Conventional Commits rules
+documented above and are enforced by review, not tooling.
+
 ## Tooling
 
 - Runtime: **Bun** (≥ 1.1). `bun` is not yet installed on this machine; scaffold files are written by hand until it is.
