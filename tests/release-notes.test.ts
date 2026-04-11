@@ -63,34 +63,44 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT.toLowerCase()).toContain('version heading');
   });
 
-  it('forbids bullets about tests and test coverage', () => {
-    // Regression guard: dry-run #3 produced "Comprehensive test suite
-    // covering..." even though the prompt told the AI to omit test
-    // commits. The explicit forbid list now calls out test topics.
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('tests');
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('test counts');
+  it('defines a structural whitelist of allowed bullet shapes', () => {
+    // Regression guard: earlier prompt iterations relied on a forbidden-
+    // word blacklist, and the AI routed around it with synonyms
+    // ("classifier", "resolver", "strategy"). The whitelist approach
+    // describes what a bullet MUST look like instead, so anything that
+    // doesn't fit gets deleted by construction.
+    expect(SYSTEM_PROMPT).toContain('DELETE IT');
+    // The five shapes should all be enumerated.
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('command');
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('flag');
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('configuration option');
+    expect(SYSTEM_PROMPT.toLowerCase()).toContain('new file');
   });
 
-  it('forbids naming internal implementation structures', () => {
-    // Regression guard: dry-run #3 produced "AI provider factory with
-    // Anthropic adapter, exponential-backoff retry wrapper". These
-    // words are now in an explicit forbid list in the prompt.
+  it('lists internal categories that must always be omitted', () => {
+    // Regression guard: dry-run #3 produced "Comprehensive test suite"
+    // and dry-run #4 leaked 3 build/CI bullets. The prompt now names
+    // these categories explicitly as ALWAYS internal.
     const lower = SYSTEM_PROMPT.toLowerCase();
-    for (const forbidden of [
-      'factory',
-      'adapter',
-      'wrapper',
-      'helper',
-      'schema',
+    for (const internal of [
+      'test suites',
+      'ci workflows',
+      'lint',
+      'build scripts',
+      'internal refactors',
+      'dependency bumps',
     ]) {
-      expect(lower).toContain(forbidden);
+      expect(lower).toContain(internal);
     }
   });
 
-  it('includes concrete bad-vs-good bullet examples', () => {
+  it('includes concrete good and bad bullet examples', () => {
     // Few-shot examples are more sticky than imperative rules alone.
-    expect(SYSTEM_PROMPT).toContain('BAD:');
-    expect(SYSTEM_PROMPT).toContain('GOOD:');
+    // Note: dry-run #6 (with BAD list removed) produced strictly worse
+    // output than #5 (with BAD list present) — the negative examples
+    // were guardrails, not imitation bait, at least for Haiku.
+    expect(SYSTEM_PROMPT).toContain('GOOD example');
+    expect(SYSTEM_PROMPT).toContain('BAD bullets');
   });
 });
 
