@@ -17,7 +17,12 @@
     "build": "bun build src/index.ts --target=bun --outdir=dist",
     "build:binary": "bun build src/index.ts --compile --outfile=releasewise",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint --fix src tests",
+    "format": "prettier --write \"src/**/*.{ts,json}\" \"tests/**/*.ts\" \"*.{json,md}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\" \"tests/**/*.ts\" \"*.{json,md}\"",
+    "check": "bun run lint && bun run format:check && bun run typecheck"
   },
   "keywords": [
     "release",
@@ -38,8 +43,14 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@eslint/js": "^9.15.0",
     "@types/bun": "latest",
-    "typescript": "^5.6.0"
+    "eslint": "^9.15.0",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^15.12.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.15.0"
   },
   "engines": {
     "bun": ">=1.1.0"
