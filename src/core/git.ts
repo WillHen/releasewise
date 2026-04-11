@@ -247,6 +247,110 @@ export async function isClean(opts: GitCommandOptions = {}): Promise<boolean> {
   return out.trim().length === 0;
 }
 
+// --------- Writes ---------
+
+/**
+ * Stage the given paths and create a commit with the given message.
+ *
+ * Uses the `git commit <path>...` form so only those paths are included;
+ * any staged or unstaged changes to other files are left exactly as they
+ * were. Returns the new HEAD SHA.
+ */
+export async function commit(
+  message: string,
+  paths: string[],
+  opts: GitCommandOptions = {},
+): Promise<string> {
+  if (paths.length === 0) {
+    throw new Error('commit() requires at least one path');
+  }
+  const cwd = opts.cwd ?? process.cwd();
+  // `git commit <paths>` stages those paths automatically, so no
+  // separate `git add` is needed.
+  await $`git commit -m ${message} -- ${paths}`.cwd(cwd).quiet();
+  return getHeadSha(opts);
+}
+
+/**
+ * Create an annotated tag (or lightweight if no message) pointing at
+ * HEAD. Throws if the tag already exists — callers should decide up
+ * front whether to delete-and-recreate.
+ */
+export async function createTag(
+  name: string,
+  message?: string,
+  opts: GitCommandOptions = {},
+): Promise<void> {
+  const cwd = opts.cwd ?? process.cwd();
+  if (message && message.length > 0) {
+    await $`git tag -a ${name} -m ${message}`.cwd(cwd).quiet();
+  } else {
+    await $`git tag ${name}`.cwd(cwd).quiet();
+  }
+}
+
+/**
+ * Delete a local tag. Used by `releasewise undo` to reverse a tag that
+ * was created but never pushed. Silent no-op if the tag doesn't exist.
+ */
+export async function deleteTag(
+  name: string,
+  opts: GitCommandOptions = {},
+): Promise<void> {
+  const cwd = opts.cwd ?? process.cwd();
+  await $`git tag -d ${name}`.cwd(cwd).quiet().nothrow();
+}
+
+export interface PushOptions extends GitCommandOptions {
+  /** Remote name, defaults to 'origin'. */
+  remote?: string;
+  /** Explicit branch/ref to push. Defaults to the current branch. */
+  ref?: string;
+  /** Also push tags reachable from the pushed commits. Default: true. */
+  followTags?: boolean;
+}
+
+/**
+ * Push commits (and, by default, follow-tags) to the configured remote.
+ *
+ * `--follow-tags` pushes any annotated tags that are reachable from the
+ * commits being pushed and don't yet exist on the remote — which is
+ * exactly what a release wants: one atomic push of the bump commit +
+ * its tag, so if the push fails both are cleanly absent on the remote.
+ */
+export async function push(opts: PushOptions = {}): Promise<void> {
+  const cwd = opts.cwd ?? process.cwd();
+  const remote = opts.remote ?? 'origin';
+  const followTags = opts.followTags ?? true;
+
+  if (opts.ref) {
+    if (followTags) {
+      await $`git push --follow-tags ${remote} ${opts.ref}`.cwd(cwd).quiet();
+    } else {
+      await $`git push ${remote} ${opts.ref}`.cwd(cwd).quiet();
+    }
+  } else if (followTags) {
+    await $`git push --follow-tags ${remote}`.cwd(cwd).quiet();
+  } else {
+    await $`git push ${remote}`.cwd(cwd).quiet();
+  }
+}
+
+/**
+ * `git reset --hard <ref>` — destroys uncommitted changes. Only called
+ * by `releasewise undo`, which first verifies the tree is clean via
+ * `isClean()`. Do NOT call this from anywhere else.
+ */
+export async function resetHard(
+  ref: string,
+  opts: GitCommandOptions = {},
+): Promise<void> {
+  const cwd = opts.cwd ?? process.cwd();
+  await $`git reset --hard ${ref}`.cwd(cwd).quiet();
+}
+
+// --------- Dirty-path check (used by release pre-flight) ---------
+
 /**
  * True if `relativePath` has any staged or unstaged changes.
  *
