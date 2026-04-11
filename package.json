@@ -1,0 +1,47 @@
+{
+  "name": "releasewise",
+  "version": "0.1.0",
+  "description": "AI-powered CLI that turns a git diff into a high-quality release — semver bump, changelog, tag, push, and GitHub Release in one command.",
+  "type": "module",
+  "bin": {
+    "releasewise": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "module": "./src/index.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "dev": "bun run src/index.ts",
+    "build": "bun build src/index.ts --target=bun --outdir=dist",
+    "build:binary": "bun build src/index.ts --compile --outfile=releasewise",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "release",
+    "semver",
+    "changelog",
+    "ai",
+    "cli",
+    "git",
+    "github",
+    "conventional-commits"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.30.0",
+    "@google/genai": "^0.3.0",
+    "citty": "^0.1.6",
+    "openai": "^4.70.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  }
+}

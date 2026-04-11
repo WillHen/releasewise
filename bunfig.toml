@@ -1,0 +1,9 @@
+[install]
+# Use exact versions for reproducible builds
+exact = false
+
+[test]
+# Bun test runner config
+root = "./tests"
+preload = []
+coverage = false

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+*.log
+.DS_Store
+
+# releasewise local (never commit secrets)
+.releasewise.local.json
+.releasewise/
+
+# Compiled binaries
+/releasewise
+/releasewise-*
+
+# Editor
+.vscode/
+.idea/
