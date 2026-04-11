@@ -72,6 +72,21 @@ docs: clarify --dry-run vs --estimate in README
 - Do not commit secrets. `.releasewise.local.json` and anything under
   `.releasewise/` are already in `.gitignore`.
 
+## Review-before-commit workflow
+
+**Never commit without an explicit user review of the staged changes.**
+The loop is:
+
+1. Write / edit files.
+2. Run `bun run check` to confirm the tree is green.
+3. **Stop and summarize what changed**, then wait for the user to review
+   (they may read the diff, ask questions, or request edits).
+4. Only after the user says to proceed: `git commit` and `git push`.
+
+This applies to every commit, including docs-only and CI-only changes.
+If a change is split across several logical commits, pause for review
+before each one — don't batch them.
+
 ## Pre-commit checklist
 
 **Always run `bun run check` before every commit.** This runs, in order:
