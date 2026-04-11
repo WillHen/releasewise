@@ -37,11 +37,20 @@ const COMMIT_FORMAT = [
   '%b', // body
 ].join(UNIT_SEP);
 
-/** Drop a trailing record-separator (git appends one) and split. */
+/**
+ * Split git log output into individual commit records.
+ *
+ * Git always terminates stdout with a trailing newline, so the raw
+ * output for N commits looks like `r1\x1e\nr2\x1e\n`. Splitting on
+ * `\x1e` gives N+1 pieces: the real records (all but the first
+ * preceded by the inter-commit `\n`) plus an empty trailing piece.
+ * Strip leading newlines from each piece and drop empties.
+ */
 function splitCommitRecords(raw: string): string[] {
-  const trimmed = raw.endsWith(RECORD_SEP) ? raw.slice(0, -1) : raw;
-  if (trimmed.length === 0) return [];
-  return trimmed.split(RECORD_SEP);
+  return raw
+    .split(RECORD_SEP)
+    .map((r) => r.replace(/^\n+/, ''))
+    .filter((r) => r.length > 0);
 }
 
 function parseCommitRecord(record: string): Commit {
