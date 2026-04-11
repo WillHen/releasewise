@@ -116,4 +116,34 @@ describe('enrichPrLinks — non-matches', () => {
   it('does not link a bare # with no digits', () => {
     expect(enrichPrLinks('a # b', github)).toBe('a # b');
   });
+
+  it('does not link refs inside an inline code span', () => {
+    // This is the dogfood bug: a bullet describing the PR linker feature
+    // had a `#123` in a code span and the linker rewrote the documentation.
+    const input = 'convert bare `#123` references into links';
+    expect(enrichPrLinks(input, github)).toBe(input);
+  });
+
+  it('still links refs outside a code span on the same line', () => {
+    const input = 'see `#123` syntax, used in #456 here';
+    expect(enrichPrLinks(input, github)).toBe(
+      'see `#123` syntax, used in [#456](https://github.com/acme/widgets/pull/456) here',
+    );
+  });
+
+  it('handles multiple code spans on one line', () => {
+    const input = 'both `#1` and `#2` are examples, real ref is #3';
+    expect(enrichPrLinks(input, github)).toBe(
+      'both `#1` and `#2` are examples, real ref is [#3](https://github.com/acme/widgets/pull/3)',
+    );
+  });
+
+  it('a backtick code span containing a ref is unchanged across lines', () => {
+    // A stray unclosed backtick on one line must not consume into the next,
+    // so a real ref on line 2 still gets linked.
+    const input = 'a lonely ` backtick\nreal ref #9';
+    expect(enrichPrLinks(input, github)).toBe(
+      'a lonely ` backtick\nreal ref [#9](https://github.com/acme/widgets/pull/9)',
+    );
+  });
 });
