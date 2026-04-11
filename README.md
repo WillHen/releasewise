@@ -28,13 +28,13 @@ ANTHROPIC_API_KEY=sk-... releasewise release
 
 ## Commands
 
-| Command | Purpose |
-|---|---|
-| `releasewise init` | Detect project, write config, update `.gitignore` |
-| `releasewise release [major\|minor\|patch]` | Run the full release flow |
-| `releasewise undo` | Revert the last local (unpushed) release |
-| `releasewise estimate` | Show token + cost estimate for the current diff |
-| `releasewise doctor` | Verify setup |
+| Command                                     | Purpose                                           |
+| ------------------------------------------- | ------------------------------------------------- |
+| `releasewise init`                          | Detect project, write config, update `.gitignore` |
+| `releasewise release [major\|minor\|patch]` | Run the full release flow                         |
+| `releasewise undo`                          | Revert the last local (unpushed) release          |
+| `releasewise estimate`                      | Show token + cost estimate for the current diff   |
+| `releasewise doctor`                        | Verify setup                                      |
 
 ## License
 

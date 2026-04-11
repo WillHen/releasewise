@@ -15,7 +15,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-import { z } from 'zod';
+import { type z } from 'zod';
 
 import { configSchema, type Config, type ConfigInput } from './config.ts';
 
@@ -76,16 +76,12 @@ function readJson(filePath: string): unknown {
   try {
     raw = readFileSync(filePath, 'utf8');
   } catch (err) {
-    throw new Error(
-      `Could not read ${filePath}: ${(err as Error).message}`,
-    );
+    throw new Error(`Could not read ${filePath}: ${(err as Error).message}`);
   }
   try {
     return JSON.parse(raw);
   } catch (err) {
-    throw new Error(
-      `Invalid JSON in ${filePath}: ${(err as Error).message}`,
-    );
+    throw new Error(`Invalid JSON in ${filePath}: ${(err as Error).message}`);
   }
 }
 
