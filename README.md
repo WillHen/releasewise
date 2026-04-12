@@ -1,5 +1,7 @@
 # releasewise
 
+[![CI](https://github.com/WillHen/releasewise/actions/workflows/ci.yml/badge.svg)](https://github.com/WillHen/releasewise/actions/workflows/ci.yml)
+
 AI-powered CLI that turns a git diff into a high-quality release — semver bump, release notes, `CHANGELOG.md`, tag, push, and GitHub Release in one command.
 
 ## Install
