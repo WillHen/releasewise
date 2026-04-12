@@ -51,6 +51,7 @@ import {
   push,
 } from './git.ts';
 import { generateReleaseNotes } from './release-notes.ts';
+import { writeTransactionLog } from './rollback.ts';
 import {
   bumpVersionString,
   resolveCurrentVersion,
@@ -381,9 +382,9 @@ export interface ExecuteReleaseResult {
  * Pre-flight: refuses to run if `package.json` or the changelog have
  * uncommitted changes, to avoid clobbering the user's in-progress work.
  *
- * This function does NOT create a transaction log — that's Step 13
- * (`rollback.ts`). The returned `ExecuteReleaseResult` carries enough
- * info for a future transaction log.
+ * After a successful release, a transaction log is written to
+ * `.releasewise/last-release.json` so `releasewise undo` can reverse
+ * the release if it hasn't been pushed yet.
  */
 export async function executeRelease(
   opts: ExecuteReleaseOptions,
@@ -430,6 +431,18 @@ export async function executeRelease(
   if (shouldPush) {
     await push({ cwd });
   }
+
+  // --- 6. Write transaction log for `releasewise undo` ---
+  await writeTransactionLog(cwd, {
+    timestamp: new Date().toISOString(),
+    fromVersion: plan.currentVersion,
+    toVersion: plan.nextVersion,
+    bumpCommitSha: commitSha,
+    tagName,
+    pushed: shouldPush,
+    githubReleaseId: null,
+    filesModified: [pkgRelative, changelogRelative],
+  });
 
   return {
     version: plan.nextVersion,

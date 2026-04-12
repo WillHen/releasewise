@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { executeRelease, type ReleasePlan } from '../src/core/orchestrator.ts';
 import { defaultConfig, type Config } from '../src/core/config.ts';
 import { getHeadSha, getLastTag, isClean } from '../src/core/git.ts';
+import { readTransactionLog } from '../src/core/rollback.ts';
 import type { ReleaseNotes } from '../src/types.ts';
 import { createGitFixture, type GitFixture } from './helpers/git-fixture.ts';
 
@@ -21,8 +22,9 @@ afterEach(() => {
   fx.cleanup();
 });
 
-/** Minimal package.json for a v0.1.0 project. */
+/** Minimal package.json for a v0.1.0 project. Also adds .gitignore for .releasewise/. */
 function seedPackageJson(version = '0.1.0'): void {
+  fx.writeFile('.gitignore', '.releasewise/\n');
   fx.writeFile(
     'package.json',
     JSON.stringify({ name: 'test-pkg', version }, null, 2) + '\n',
@@ -250,5 +252,46 @@ describe('executeRelease', () => {
     });
 
     expect(result.pushed).toBe(false);
+  });
+
+  it('writes a transaction log after release', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+
+    const plan = buildPlan();
+    const result = await executeRelease({
+      plan,
+      config: config(),
+      cwd: fx.dir,
+      noPush: true,
+    });
+
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.fromVersion).toBe('0.1.0');
+    expect(log!.toVersion).toBe('1.0.0');
+    expect(log!.tagName).toBe('v1.0.0');
+    expect(log!.bumpCommitSha).toBe(result.commitSha);
+    expect(log!.pushed).toBe(false);
+    expect(log!.filesModified).toContain('package.json');
+  });
+
+  it('transaction log records pushed: true when push is enabled', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+    // Add a bare remote and push the initial commit to set up tracking.
+    const remoteDir = `${fx.dir}-remote`;
+    await $`git init --bare ${remoteDir}`.quiet();
+    await $`git remote add origin ${remoteDir}`.cwd(fx.dir).quiet();
+    await $`git push -u origin main`.cwd(fx.dir).quiet();
+
+    const plan = buildPlan();
+    const cfg = config();
+    cfg.release.pushOnRelease = true;
+    await executeRelease({ plan, config: cfg, cwd: fx.dir });
+
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.pushed).toBe(true);
   });
 });
