@@ -295,7 +295,8 @@ export const releaseCommand = defineCommand({
     },
     tone: {
       type: 'string',
-      description: 'formal | casual | technical (Milestone B)',
+      description:
+        'Release notes tone: formal | casual | technical (not yet implemented)',
     },
     yes: {
       type: 'boolean',
