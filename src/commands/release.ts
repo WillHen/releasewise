@@ -1,5 +1,5 @@
 /**
- * `releasewise release` command.
+ * `releasewise release` command — plan and execute a semver release.
  *
  * Structure:
  *
