@@ -1,0 +1,19 @@
+{
+  "projectName": "releasewise",
+  "commitMode": "mixed",
+  "ai": {
+    "provider": "anthropic",
+    "model": "claude-sonnet-4-6",
+    "maxDiffTokens": 8000
+  },
+  "changelog": {
+    "format": "changelog",
+    "path": "CHANGELOG.md"
+  },
+  "release": {
+    "tagPrefix": "v",
+    "pushOnRelease": true,
+    "createGithubRelease": true,
+    "tone": "technical"
+  }
+}
