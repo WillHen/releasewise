@@ -88,6 +88,14 @@ export function createOpenAIProvider(opts: OpenAIAdapterOptions): AIProvider {
 
 // --------- Helpers ---------
 
+/**
+ * Classify an SDK error as retryable or fatal.
+ *
+ * Errors without a numeric `status` field (connection resets, DNS, etc.)
+ * are treated as retryable — better to try again than to fail fast on a
+ * blip. HTTP 429 (rate limit) and 5xx (server) are retryable. Other 4xx
+ * responses are fatal.
+ */
 function isRetryableError(err: unknown): boolean {
   if (err === null || typeof err !== 'object') return true;
   const status = (err as { status?: unknown }).status;

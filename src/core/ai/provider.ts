@@ -55,6 +55,8 @@ export function getProvider(opts: GetProviderOptions): AIProvider {
       });
     }
     case 'groq': {
+      // Groq exposes an OpenAI-compatible API, so we reuse the OpenAI
+      // SDK client (and the openaiClient test injection field).
       const client =
         opts.openaiClient ??
         (new OpenAI({
@@ -70,7 +72,12 @@ export function getProvider(opts: GetProviderOptions): AIProvider {
     case 'gemini': {
       const client =
         opts.geminiClient ??
-        (new GoogleGenAI({ apiKey }) as unknown as GeminiClient);
+        (new GoogleGenAI({
+          apiKey,
+          ...(config.ai.baseUrl
+            ? { httpOptions: { baseUrl: config.ai.baseUrl } }
+            : {}),
+        }) as unknown as GeminiClient);
       return createGeminiProvider({
         client,
         model: config.ai.model,
