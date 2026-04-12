@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +27,61 @@ jobs:
           bun build src/index.ts --compile --target=bun-linux-x64 --outfile=releasewise-linux-x64
           bun build src/index.ts --compile --target=bun-linux-arm64 --outfile=releasewise-linux-arm64
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: releasewise-linux-*
+
+  build-darwin:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and sign macOS binaries
+        # Bun pre-allocates an empty LC_CODE_SIGNATURE slot that confuses
+        # codesign on first signing. The workaround is to remove the stub
+        # signature and then apply an ad-hoc signature. Without this, Apple
+        # Silicon macOS SIGKILLs the binary at exec time.
+        run: |
+          for target in darwin-arm64 darwin-x64; do
+            out="releasewise-${target}"
+            bun build src/index.ts --compile --target=bun-${target} --outfile="$out"
+            codesign --remove-signature "$out"
+            codesign --force --sign - "$out"
+            codesign --verify --verbose=2 "$out"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: darwin-binaries
+          path: releasewise-darwin-*
+
+  publish:
+    needs: [build-linux, build-darwin]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+
+      - name: Download Darwin artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: darwin-binaries
+
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -36,4 +91,6 @@ jobs:
             --title "$TAG" \
             --generate-notes \
             releasewise-linux-x64 \
-            releasewise-linux-arm64
+            releasewise-linux-arm64 \
+            releasewise-darwin-arm64 \
+            releasewise-darwin-x64

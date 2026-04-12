@@ -6,23 +6,19 @@ AI-powered CLI that turns a git diff into a high-quality release — semver bump
 
 ## Install
 
-### macOS (and Bun users)
+### Standalone binary (recommended)
+
+Download the latest binary from the [GitHub Releases](https://github.com/WillHen/releasewise/releases) page:
 
 ```bash
-bun install -g releasewise
-```
+# macOS (Apple Silicon)
+curl -fsSL https://github.com/WillHen/releasewise/releases/latest/download/releasewise-darwin-arm64 -o releasewise
+chmod +x releasewise && sudo mv releasewise /usr/local/bin/
 
-Requires [Bun](https://bun.sh) >= 1.1. On macOS, this is the recommended path — standalone Bun-compiled binaries don't currently ship with a valid macOS signature.
+# macOS (Intel)
+curl -fsSL https://github.com/WillHen/releasewise/releases/latest/download/releasewise-darwin-x64 -o releasewise
+chmod +x releasewise && sudo mv releasewise /usr/local/bin/
 
-### npm
-
-```bash
-npm install -g releasewise
-```
-
-### Linux (standalone binary)
-
-```bash
 # Linux (x64)
 curl -fsSL https://github.com/WillHen/releasewise/releases/latest/download/releasewise-linux-x64 -o releasewise
 chmod +x releasewise && sudo mv releasewise /usr/local/bin/
@@ -32,7 +28,13 @@ curl -fsSL https://github.com/WillHen/releasewise/releases/latest/download/relea
 chmod +x releasewise && sudo mv releasewise /usr/local/bin/
 ```
 
-### From source
+### npm
+
+```bash
+npm install -g releasewise
+```
+
+### From source (requires Bun >= 1.1)
 
 ```bash
 git clone https://github.com/WillHen/releasewise.git
