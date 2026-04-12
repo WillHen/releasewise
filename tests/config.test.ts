@@ -10,7 +10,7 @@ describe('defaultConfig()', () => {
     expect(cfg.language).toBe('en');
 
     expect(cfg.ai.provider).toBe('anthropic');
-    expect(cfg.ai.model).toBe('claude-haiku-4-5');
+    expect(cfg.ai.model).toBe('claude-sonnet-4-6');
     expect(cfg.ai.maxDiffTokens).toBe(8000);
     expect(cfg.ai.maxOutputTokens).toBe(2000);
     expect(cfg.ai.temperature).toBe(0.4);
@@ -68,7 +68,7 @@ describe('configSchema — accepts', () => {
     });
     expect(parsed.ai.provider).toBe('openai');
     // Unset fields still populated from schema defaults.
-    expect(parsed.ai.model).toBe('claude-haiku-4-5');
+    expect(parsed.ai.model).toBe('claude-sonnet-4-6');
     expect(parsed.commitMode).toBe('mixed');
   });
 });

@@ -30,7 +30,15 @@ export const toneSchema = z.enum(['formal', 'casual', 'technical']);
 
 export const aiConfigSchema = z.object({
   provider: providerNameSchema.default('anthropic'),
-  model: z.string().min(1).default('claude-haiku-4-5'),
+  // Sonnet, not Haiku: dogfood rounds 5-9 (see commit history) showed
+  // Haiku 4.5 cannot reliably follow the release-notes prompt — it leaks
+  // internal module names, test/CI bullets, and forbidden categories
+  // despite explicit structural guidance. Sonnet 4.6 produces clean,
+  // shippable notes on the same prompt. The cost delta is cents per
+  // release at this workload, so default to the model that actually
+  // works rather than the cheaper one. Override in .releasewise.json
+  // if you want a different trade-off.
+  model: z.string().min(1).default('claude-sonnet-4-6'),
   maxDiffTokens: z.number().int().positive().default(8000),
   maxOutputTokens: z.number().int().positive().default(2000),
   temperature: z.number().min(0).max(2).default(0.4),
