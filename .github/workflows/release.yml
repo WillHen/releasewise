@@ -82,15 +82,24 @@ jobs:
         with:
           name: darwin-binaries
 
-      - name: Create GitHub Release
+      - name: Attach binaries to GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes \
-            releasewise-linux-x64 \
-            releasewise-linux-arm64 \
-            releasewise-darwin-arm64 \
+          FILES=(
+            releasewise-linux-x64
+            releasewise-linux-arm64
+            releasewise-darwin-arm64
             releasewise-darwin-x64
+          )
+          # If releasewise already created the release locally, upload to it.
+          # Otherwise (e.g. tag pushed manually) create it here.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber
+          else
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              "${FILES[@]}"
+          fi
