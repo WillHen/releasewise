@@ -210,7 +210,7 @@ export async function runRelease(
 
     // 10. Show the plan before executing so the user sees what's happening.
     if (!args.json) {
-      stdout(`${formatHumanPreview(merged)}\n\n`);
+      stdout(`${formatHumanPreview(merged, { dryRun: false })}\n\n`);
     }
 
     // 11. Execute.
@@ -228,7 +228,7 @@ export async function runRelease(
       stdout(
         `${JSON.stringify(
           {
-            ...formatJsonPreview(merged),
+            ...formatJsonPreview(merged, { dryRun: false }),
             executed: true,
             commitSha: result.commitSha,
             tagName: result.tagName,

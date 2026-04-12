@@ -226,6 +226,15 @@ describe('runRelease — dry-run vs execute', () => {
     expect(sinks.stdout).toContain('Released v1.3.0');
   });
 
+  it('omits dry-run markers in the execute-mode preview', async () => {
+    const { deps, sinks } = buildDeps({ isTTY: false });
+    const result = await runRelease({ yes: true }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(sinks.stdout).toContain('Release plan');
+    expect(sinks.stdout).not.toContain('(dry run)');
+    expect(sinks.stdout).not.toContain('This was a dry run');
+  });
+
   it('refuses to execute in TTY mode without --yes', async () => {
     const { deps, sinks, calls } = buildDeps({ isTTY: true });
     const result = await runRelease({}, deps);
@@ -240,6 +249,7 @@ describe('runRelease — dry-run vs execute', () => {
     expect(result.exitCode).toBe(0);
     const parsed = JSON.parse(sinks.stdout);
     expect(parsed.executed).toBe(true);
+    expect(parsed.dryRun).toBe(false);
     expect(parsed.commitSha).toBeDefined();
     expect(parsed.tagName).toBe('v1.3.0');
   });

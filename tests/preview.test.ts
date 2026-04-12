@@ -66,9 +66,14 @@ function plan(partial: Partial<ReleasePlan> = {}): ReleasePlan {
 // --------- formatJsonPreview ---------
 
 describe('formatJsonPreview', () => {
-  it('has dryRun: true', () => {
+  it('has dryRun: true by default', () => {
     const out = formatJsonPreview(plan());
     expect(out.dryRun).toBe(true);
+  });
+
+  it('reflects dryRun: false when requested', () => {
+    const out = formatJsonPreview(plan(), { dryRun: false });
+    expect(out.dryRun).toBe(false);
   });
 
   it('carries top-level fields from the plan', () => {
@@ -208,6 +213,13 @@ describe('formatHumanPreview', () => {
     const out = formatHumanPreview(plan());
     expect(out).toContain('Release plan (dry run)');
     expect(out).toContain('This was a dry run');
+  });
+
+  it('omits the dry-run markers when dryRun is false', () => {
+    const out = formatHumanPreview(plan(), { dryRun: false });
+    expect(out).toContain('Release plan');
+    expect(out).not.toContain('(dry run)');
+    expect(out).not.toContain('This was a dry run');
   });
 
   it('shows the bump with (auto) marker', () => {

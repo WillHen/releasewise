@@ -49,7 +49,7 @@ export interface JsonPreviewChangelog {
 }
 
 export interface JsonPreview {
-  dryRun: true;
+  dryRun: boolean;
   baseRef: string;
   headSha: string;
   firstRelease: boolean;
@@ -73,10 +73,18 @@ export interface JsonPreview {
  * emitted by `release --dry-run --json`. Strips the `changelogBefore`
  * (consumers can re-read the file) and the full truncated diff body
  * (only its metadata is useful downstream).
+ *
+ * `dryRun` defaults to `true` so the preview (the original caller) keeps
+ * its existing shape. Pass `{ dryRun: false }` when the same shape is
+ * reused to emit the pre-execute plan on a real release.
  */
-export function formatJsonPreview(plan: ReleasePlan): JsonPreview {
+export function formatJsonPreview(
+  plan: ReleasePlan,
+  options: { dryRun?: boolean } = {},
+): JsonPreview {
+  const { dryRun = true } = options;
   return {
-    dryRun: true,
+    dryRun,
     baseRef: plan.baseRef,
     headSha: plan.headSha,
     firstRelease: plan.firstRelease,
@@ -122,7 +130,12 @@ const RULE = '-'.repeat(60);
  * Render a human-readable multi-section preview of a release plan.
  * ASCII-only, no colors — keep it snapshot-stable and CI-friendly.
  *
- * Layout:
+ * `dryRun` defaults to `true` — the original use case. Pass
+ * `{ dryRun: false }` to reuse the same layout as the pre-execute plan
+ * on a real release: the header drops "(dry run)" and the "no files
+ * were modified" footer is omitted.
+ *
+ * Layout (dry run):
  *
  *     ------------------------------------------------------------
  *     Release plan (dry run)
@@ -149,10 +162,14 @@ const RULE = '-'.repeat(60);
  *     Warnings:
  *       ! message one
  */
-export function formatHumanPreview(plan: ReleasePlan): string {
+export function formatHumanPreview(
+  plan: ReleasePlan,
+  options: { dryRun?: boolean } = {},
+): string {
+  const { dryRun = true } = options;
   const lines: string[] = [];
   lines.push(RULE);
-  lines.push('Release plan (dry run)');
+  lines.push(dryRun ? 'Release plan (dry run)' : 'Release plan');
   lines.push(RULE);
   lines.push('');
 
@@ -190,11 +207,13 @@ export function formatHumanPreview(plan: ReleasePlan): string {
     }
   }
 
-  // --- Footer ---
-  lines.push('');
-  lines.push(RULE);
-  lines.push('This was a dry run. No files or git state were modified.');
-  lines.push(RULE);
+  // --- Footer (dry run only) ---
+  if (dryRun) {
+    lines.push('');
+    lines.push(RULE);
+    lines.push('This was a dry run. No files or git state were modified.');
+    lines.push(RULE);
+  }
 
   return lines.join('\n');
 }
