@@ -265,8 +265,10 @@ export async function commit(
     throw new Error('commit() requires at least one path');
   }
   const cwd = opts.cwd ?? process.cwd();
-  // `git commit <paths>` stages those paths automatically, so no
-  // separate `git add` is needed.
+  // Explicit `git add` first — `git commit -- <paths>` only handles
+  // tracked files. New files (e.g. a brand-new CHANGELOG.md) need to be
+  // staged before they can be committed.
+  await $`git add -- ${paths}`.cwd(cwd).quiet();
   await $`git commit -m ${message} -- ${paths}`.cwd(cwd).quiet();
   return getHeadSha(opts);
 }

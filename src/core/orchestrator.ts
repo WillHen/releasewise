@@ -1,19 +1,12 @@
 /**
- * Release orchestrator — read path.
+ * Release orchestrator.
  *
- * This is the glue that stitches every other module into a single
- * `ReleasePlan`: config → commits → classification → bump → truncated
- * diff → release notes → CHANGELOG preview. It intentionally does NOT
- * touch disk or git state — callers get a plan object they can render
- * (Step 15a) and, eventually, execute (Step 12b).
+ * Three functions, each building on the previous:
  *
- * Split into two functions so tests don't need a real repo for most
- * cases:
- *
- *   1. `collectReleaseInputs()` — the only side-effecting layer. Reads
- *      git (log, diff, tags, remote) and the filesystem (package.json,
- *      existing CHANGELOG.md). One integration test covers this via a
- *      git fixture.
+ *   1. `collectReleaseInputs()` — the only side-effecting read layer.
+ *      Reads git (log, diff, tags, remote) and the filesystem
+ *      (package.json, existing CHANGELOG.md). One integration test
+ *      covers this via a git fixture.
  *
  *   2. `planRelease()` — takes a fully-collected `ReleaseInputs` and
  *      runs the classifier, bump math, truncator, notes generation,
@@ -21,11 +14,16 @@
  *      by the classifier and notes generator — both of which accept
  *      injected fakes in tests.
  *
- * The split also means `--dry-run` and a future `--estimate` mode
- * share exactly the same collection step.
+ *   3. `executeRelease()` — takes a `ReleasePlan` and writes it to
+ *      disk + git: bumps package.json, writes CHANGELOG.md, commits,
+ *      tags, and optionally pushes. Returns an `ExecuteReleaseResult`
+ *      with everything the CLI needs to render the outcome.
+ *
+ * The split means `--dry-run` shares collection + planning with the
+ * real release, and each layer is independently testable.
  */
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, writeFile as fsWriteFile } from 'node:fs/promises';
+import { join, relative } from 'node:path';
 
 import type {
   AIProvider,
@@ -41,15 +39,23 @@ import { prependChangelog } from './changelog.ts';
 import { classifyCommits } from './classify.ts';
 import type { Config } from './config.ts';
 import {
+  commit as gitCommit,
+  createTag,
   getBaseRef,
   getCommitsBetween,
   getDiffBetween,
   getHeadSha,
   getLastTag,
   getRemoteUrl,
+  isPathDirty,
+  push,
 } from './git.ts';
 import { generateReleaseNotes } from './release-notes.ts';
-import { bumpVersionString, resolveCurrentVersion } from './version.ts';
+import {
+  bumpVersionString,
+  resolveCurrentVersion,
+  writePackageVersion,
+} from './version.ts';
 
 // --------- collectReleaseInputs ---------
 
@@ -337,4 +343,100 @@ function stripTagPrefix(tag: string, prefix: string): string {
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+// --------- executeRelease ---------
+
+export interface ExecuteReleaseOptions {
+  plan: ReleasePlan;
+  config: Config;
+  /** Working directory. Defaults to `process.cwd()`. */
+  cwd?: string;
+  /** Skip `git push`. */
+  noPush?: boolean;
+}
+
+export interface ExecuteReleaseResult {
+  /** The new version that was written. */
+  version: string;
+  /** The git tag that was created. */
+  tagName: string;
+  /** The SHA of the release commit. */
+  commitSha: string;
+  /** Absolute path of the changelog file that was written. */
+  changelogPath: string;
+  /** True if `git push` was executed. */
+  pushed: boolean;
+  /** Relative paths of files modified by the release. */
+  filesModified: string[];
+}
+
+/**
+ * Execute a release plan: write files, commit, tag, and optionally push.
+ *
+ * Ordering is deliberate — filesystem writes first, then git operations,
+ * so a failure partway through leaves at most a dirty working tree (easy
+ * to inspect and retry) rather than a dangling tag or pushed state.
+ *
+ * Pre-flight: refuses to run if `package.json` or the changelog have
+ * uncommitted changes, to avoid clobbering the user's in-progress work.
+ *
+ * This function does NOT create a transaction log — that's Step 13
+ * (`rollback.ts`). The returned `ExecuteReleaseResult` carries enough
+ * info for a future transaction log.
+ */
+export async function executeRelease(
+  opts: ExecuteReleaseOptions,
+): Promise<ExecuteReleaseResult> {
+  const { plan, config } = opts;
+  const cwd = opts.cwd ?? process.cwd();
+
+  // --- Pre-flight: refuse to clobber dirty files ---
+  const pkgRelative = 'package.json';
+  const changelogRelative =
+    relative(cwd, plan.changelogPath) || config.changelog.path;
+
+  for (const path of [pkgRelative, changelogRelative]) {
+    if (await isPathDirty(path, { cwd })) {
+      throw new Error(
+        `${path} has uncommitted changes. Commit or stash them before releasing.`,
+      );
+    }
+  }
+
+  // --- 1. Write package.json ---
+  await writePackageVersion(cwd, plan.nextVersion);
+
+  // --- 2. Write CHANGELOG.md ---
+  await fsWriteFile(plan.changelogPath, plan.changelogAfter, 'utf8');
+
+  // --- 3. Commit ---
+  const commitMessage = config.release.commitMessage.replace(
+    '${version}',
+    plan.nextVersion,
+  );
+  const commitSha = await gitCommit(
+    commitMessage,
+    [pkgRelative, changelogRelative],
+    { cwd },
+  );
+
+  // --- 4. Tag ---
+  const tagName = `${config.release.tagPrefix}${plan.nextVersion}`;
+  await createTag(tagName, `Release ${tagName}`, { cwd });
+
+  // --- 5. Push (if enabled) ---
+  const shouldPush = !opts.noPush && config.release.pushOnRelease;
+  if (shouldPush) {
+    await push({ cwd });
+  }
+
+  return {
+    version: plan.nextVersion,
+    tagName,
+    commitSha,
+    changelogPath: plan.changelogPath,
+    pushed: shouldPush,
+    filesModified: [pkgRelative, changelogRelative],
+  };
 }

@@ -5,6 +5,8 @@ import type { LoadedConfig } from '../src/core/config-loader.ts';
 import type { ResolvedApiKey } from '../src/core/config-resolver.ts';
 import type {
   CollectReleaseInputsOptions,
+  ExecuteReleaseOptions,
+  ExecuteReleaseResult,
   PlanReleaseOptions,
   ReleaseInputs,
   ReleasePlan,
@@ -108,7 +110,11 @@ interface BuildDepsOptions {
     opts: CollectReleaseInputsOptions,
   ) => Promise<ReleaseInputs>;
   planReleaseImpl?: (opts: PlanReleaseOptions) => Promise<ReleasePlan>;
+  executeReleaseImpl?: (
+    opts: ExecuteReleaseOptions,
+  ) => Promise<ExecuteReleaseResult>;
   env?: Record<string, string | undefined>;
+  isTTY?: boolean;
 }
 
 function buildDeps(opts: BuildDepsOptions = {}): {
@@ -123,12 +129,13 @@ function buildDeps(opts: BuildDepsOptions = {}): {
     getProvider: 0,
     collectReleaseInputs: 0,
     planRelease: 0,
+    executeRelease: 0,
   };
 
   const deps: RunReleaseDeps = {
     cwd: '/tmp/fake',
     env: opts.env ?? { ANTHROPIC_API_KEY: 'sk-test' },
-    isTTY: false,
+    isTTY: opts.isTTY ?? false,
     stdout: (t) => {
       sinks.stdout += t;
     },
@@ -173,31 +180,86 @@ function buildDeps(opts: BuildDepsOptions = {}): {
       if (opts.planReleaseImpl) return opts.planReleaseImpl(o);
       return fakePlan();
     },
+    executeRelease: async (o) => {
+      calls.executeRelease++;
+      if (opts.executeReleaseImpl) return opts.executeReleaseImpl(o);
+      return {
+        version: o.plan.nextVersion,
+        tagName: `v${o.plan.nextVersion}`,
+        commitSha: 'a'.repeat(40),
+        changelogPath: o.plan.changelogPath,
+        pushed: !o.noPush && o.config.release.pushOnRelease,
+        filesModified: ['package.json', 'CHANGELOG.md'],
+      };
+    },
   };
 
   return { deps, sinks, calls };
 }
 
-// --------- Scope gate ---------
+// --------- Dry-run vs execute ---------
 
-describe('runRelease — scope gate', () => {
-  it('refuses to run without --dry-run and returns exit 1', async () => {
-    const { deps, sinks, calls } = buildDeps();
-    const result = await runRelease({}, deps);
-    expect(result.exitCode).toBe(1);
-    expect(sinks.stderr).toContain('Milestone A');
-    expect(sinks.stderr).toContain('dry-run');
-    // Should not have touched anything downstream.
-    expect(calls.loadConfig).toBe(0);
-    expect(calls.collectReleaseInputs).toBe(0);
-    expect(calls.planRelease).toBe(0);
-  });
-
+describe('runRelease — dry-run vs execute', () => {
   it('runs the preview path when --dry-run is set', async () => {
-    const { deps, sinks } = buildDeps();
+    const { deps, sinks, calls } = buildDeps();
     const result = await runRelease({ dryRun: true }, deps);
     expect(result.exitCode).toBe(0);
+    expect(calls.executeRelease).toBe(0);
+    expect(sinks.stdout.length).toBeGreaterThan(0);
     expect(sinks.stdout).toContain('Release plan (dry run)');
+  });
+
+  it('executes the release in non-TTY mode (implicit --yes)', async () => {
+    const { deps, sinks, calls } = buildDeps({ isTTY: false });
+    const result = await runRelease({}, deps);
+    expect(result.exitCode).toBe(0);
+    expect(calls.executeRelease).toBe(1);
+    expect(sinks.stdout).toContain('Released v1.3.0');
+  });
+
+  it('executes the release with explicit --yes in TTY mode', async () => {
+    const { deps, sinks, calls } = buildDeps({ isTTY: true });
+    const result = await runRelease({ yes: true }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(calls.executeRelease).toBe(1);
+    expect(sinks.stdout).toContain('Released v1.3.0');
+  });
+
+  it('refuses to execute in TTY mode without --yes', async () => {
+    const { deps, sinks, calls } = buildDeps({ isTTY: true });
+    const result = await runRelease({}, deps);
+    expect(result.exitCode).toBe(1);
+    expect(sinks.stderr).toContain('--yes');
+    expect(calls.executeRelease).toBe(0);
+  });
+
+  it('renders JSON output when executing with --json', async () => {
+    const { deps, sinks } = buildDeps();
+    const result = await runRelease({ json: true, yes: true }, deps);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(sinks.stdout);
+    expect(parsed.executed).toBe(true);
+    expect(parsed.commitSha).toBeDefined();
+    expect(parsed.tagName).toBe('v1.3.0');
+  });
+
+  it('passes --no-push through to executeRelease', async () => {
+    let capturedNoPush: boolean | undefined;
+    const { deps } = buildDeps({
+      executeReleaseImpl: async (o) => {
+        capturedNoPush = o.noPush;
+        return {
+          version: o.plan.nextVersion,
+          tagName: `v${o.plan.nextVersion}`,
+          commitSha: 'a'.repeat(40),
+          changelogPath: o.plan.changelogPath,
+          pushed: false,
+          filesModified: ['package.json', 'CHANGELOG.md'],
+        };
+      },
+    });
+    await runRelease({ noPush: true, yes: true }, deps);
+    expect(capturedNoPush).toBe(true);
   });
 });
 

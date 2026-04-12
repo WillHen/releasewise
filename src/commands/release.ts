@@ -1,11 +1,6 @@
 /**
  * `releasewise release` command.
  *
- * Milestone A scope: **dry-run only**. The full write path (bump
- * package.json, commit, tag, push, GitHub Release) lands in Step 12b
- * — this command refuses to run without `--dry-run` for now so users
- * don't get a silent no-op when they expected a real release.
- *
  * Structure:
  *
  *   - `runRelease(args, deps)` is the testable entry point. It takes
@@ -16,6 +11,14 @@
  *   - `releaseCommand` is the thin citty wrapper — it just maps
  *     `args` into the runRelease shape and translates non-zero exit
  *     codes into `process.exit`.
+ *
+ * Two modes:
+ *
+ *   - `--dry-run`: plan the release, render a preview, exit without
+ *     writing anything.
+ *
+ *   - Normal: plan the release, render a preview, then execute it
+ *     (bump package.json, write CHANGELOG.md, commit, tag, push).
  *
  * All writes go through the injected `stdout` / `stderr` so tests can
  * capture them as strings. All errors are caught and rendered with
@@ -34,8 +37,11 @@ import {
 import { getProvider as realGetProvider } from '../core/ai/provider.ts';
 import {
   collectReleaseInputs as realCollectReleaseInputs,
+  executeRelease as realExecuteRelease,
   planRelease as realPlanRelease,
   type CollectReleaseInputsOptions,
+  type ExecuteReleaseOptions,
+  type ExecuteReleaseResult,
   type PlanReleaseOptions,
   type ReleaseInputs,
   type ReleasePlan,
@@ -51,6 +57,7 @@ export interface RunReleaseArgs {
   pre?: string;
   from?: string;
   dryRun?: boolean;
+  noPush?: boolean;
   json?: boolean;
   yes?: boolean;
   noAi?: boolean;
@@ -76,6 +83,9 @@ export interface RunReleaseDeps {
     opts: CollectReleaseInputsOptions,
   ) => Promise<ReleaseInputs>;
   planRelease?: (opts: PlanReleaseOptions) => Promise<ReleasePlan>;
+  executeRelease?: (
+    opts: ExecuteReleaseOptions,
+  ) => Promise<ExecuteReleaseResult>;
 }
 
 export interface RunReleaseResult {
@@ -99,39 +109,29 @@ export async function runRelease(
   const collectReleaseInputs =
     deps.collectReleaseInputs ?? realCollectReleaseInputs;
   const planRelease = deps.planRelease ?? realPlanRelease;
+  const executeRelease = deps.executeRelease ?? realExecuteRelease;
 
   try {
-    // 1. Scope gate — Milestone A is dry-run only.
-    if (!args.dryRun) {
-      stderr(
-        'Error: releasewise is in Milestone A — only `release --dry-run` is supported right now.\n' +
-          'The write path (package.json bump, commit, tag, push, GitHub Release) lands in Step 12b.\n',
-      );
-      return { exitCode: 1 };
-    }
+    // 1. Resolve the effective --yes: explicit flag > TTY auto-detect.
+    const autoConfirm = args.yes ?? !isTTY;
 
-    // 2. Record the effective --yes (TTY auto-detect). Not used in
-    //    dry-run since we don't prompt, but keeps parity with the
-    //    Milestone B write path and future tests.
-    void (args.yes ?? !isTTY);
-
-    // 3. Validate string args before touching config or git.
+    // 2. Validate string args before touching config or git.
     const forceBump = parseBumpArg(args.bump);
     const mode = parseModeArg(args.mode);
     const prerelease = parsePreArg(args.pre);
     const fromRef = parseFromArg(args.from);
 
-    // 4. Load config.
+    // 3. Load config.
     const loaded = loadConfig({ cwd });
 
-    // 5. Build the provider (or null for --no-ai).
+    // 4. Build the provider (or null for --no-ai).
     let provider: AIProvider | null = null;
     if (!args.noAi) {
       const key = resolveApiKey(loaded.config, { env });
       provider = getProvider({ config: loaded.config, apiKey: key.key });
     }
 
-    // 6. Collect repo inputs and build the plan.
+    // 5. Collect repo inputs and build the plan.
     const inputs = await collectReleaseInputs({
       cwd,
       config: loaded.config,
@@ -146,17 +146,73 @@ export async function runRelease(
       mode,
     });
 
-    // 7. Merge loader warnings in front of plan warnings (immutable).
+    // 6. Merge loader warnings in front of plan warnings (immutable).
     const merged: ReleasePlan = {
       ...plan,
       warnings: [...loaded.warnings, ...plan.warnings],
     };
 
-    // 8. Render.
+    // 7. Dry-run: render preview and exit.
+    if (args.dryRun) {
+      if (args.json) {
+        stdout(`${JSON.stringify(formatJsonPreview(merged), null, 2)}\n`);
+      } else {
+        stdout(`${formatHumanPreview(merged)}\n`);
+      }
+      return { exitCode: 0 };
+    }
+
+    // 8. Real release: require --yes or TTY auto-confirm.
+    //    (Interactive prompting is deferred — for now, non-TTY implies
+    //    --yes and interactive TTY without --yes is an error.)
+    if (!autoConfirm) {
+      stderr(
+        'Error: interactive confirmation is not yet implemented.\n' +
+          'Pass --yes (or -y) to proceed, or use --dry-run to preview first.\n',
+      );
+      return { exitCode: 1 };
+    }
+
+    // 9. Show the plan before executing so the user sees what's happening.
+    if (!args.json) {
+      stdout(`${formatHumanPreview(merged)}\n\n`);
+    }
+
+    // 10. Execute.
+    const result = await executeRelease({
+      plan: merged,
+      config: loaded.config,
+      cwd,
+      noPush: args.noPush,
+    });
+
+    // 11. Render outcome.
     if (args.json) {
-      stdout(`${JSON.stringify(formatJsonPreview(merged), null, 2)}\n`);
+      stdout(
+        `${JSON.stringify(
+          {
+            ...formatJsonPreview(merged),
+            executed: true,
+            commitSha: result.commitSha,
+            tagName: result.tagName,
+            pushed: result.pushed,
+            filesModified: result.filesModified,
+          },
+          null,
+          2,
+        )}\n`,
+      );
     } else {
-      stdout(`${formatHumanPreview(merged)}\n`);
+      const pushLine = result.pushed
+        ? 'Pushed to remote.'
+        : 'Not pushed (use `git push --follow-tags` to push manually).';
+      stdout(
+        `\nReleased ${result.tagName}\n` +
+          `  Commit:    ${result.commitSha.slice(0, 7)}\n` +
+          `  Tag:       ${result.tagName}\n` +
+          `  Changelog: ${result.changelogPath}\n` +
+          `  ${pushLine}\n`,
+      );
     }
 
     return { exitCode: 0 };
@@ -249,7 +305,7 @@ export const releaseCommand = defineCommand({
     },
     'no-push': {
       type: 'boolean',
-      description: 'Do not run git push (Milestone B)',
+      description: 'Do not run git push after tagging',
       default: false,
     },
     'dry-run': {
@@ -302,6 +358,7 @@ export const releaseCommand = defineCommand({
       pre: args.pre as string | undefined,
       from: args.from as string | undefined,
       dryRun: Boolean(args['dry-run']),
+      noPush: Boolean(args['no-push']),
       json: Boolean(args.json),
       yes: Boolean(args.yes),
       noAi: Boolean(args['no-ai']),
