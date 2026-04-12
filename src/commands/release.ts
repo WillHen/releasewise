@@ -58,6 +58,7 @@ export interface RunReleaseArgs {
   from?: string;
   dryRun?: boolean;
   noPush?: boolean;
+  noGithubRelease?: boolean;
   json?: boolean;
   yes?: boolean;
   noAi?: boolean;
@@ -184,6 +185,8 @@ export async function runRelease(
       config: loaded.config,
       cwd,
       noPush: args.noPush,
+      noGithubRelease: args.noGithubRelease,
+      env,
     });
 
     // 11. Render outcome.
@@ -197,6 +200,7 @@ export async function runRelease(
             tagName: result.tagName,
             pushed: result.pushed,
             filesModified: result.filesModified,
+            githubRelease: result.githubRelease,
           },
           null,
           2,
@@ -206,12 +210,19 @@ export async function runRelease(
       const pushLine = result.pushed
         ? 'Pushed to remote.'
         : 'Not pushed (use `git push --follow-tags` to push manually).';
+      let ghLine = '';
+      if (result.githubRelease?.status === 'created') {
+        ghLine = `  Release:   ${result.githubRelease.url}\n`;
+      } else if (result.githubRelease?.status === 'skipped') {
+        ghLine = `  Release:   skipped — ${result.githubRelease.reason}\n`;
+      }
       stdout(
         `\nReleased ${result.tagName}\n` +
           `  Commit:    ${result.commitSha.slice(0, 7)}\n` +
           `  Tag:       ${result.tagName}\n` +
           `  Changelog: ${result.changelogPath}\n` +
-          `  ${pushLine}\n`,
+          `  ${pushLine}\n` +
+          ghLine,
       );
     }
 
@@ -331,7 +342,7 @@ export const releaseCommand = defineCommand({
     },
     'no-github-release': {
       type: 'boolean',
-      description: 'Skip GitHub Release creation (Milestone B)',
+      description: 'Skip GitHub Release creation',
       default: false,
     },
     credits: {
@@ -360,6 +371,7 @@ export const releaseCommand = defineCommand({
       from: args.from as string | undefined,
       dryRun: Boolean(args['dry-run']),
       noPush: Boolean(args['no-push']),
+      noGithubRelease: Boolean(args['no-github-release']),
       json: Boolean(args.json),
       yes: Boolean(args.yes),
       noAi: Boolean(args['no-ai']),

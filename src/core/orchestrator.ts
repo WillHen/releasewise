@@ -50,6 +50,12 @@ import {
   isPathDirty,
   push,
 } from './git.ts';
+import {
+  createGithubRelease as realCreateGithubRelease,
+  type CreateGithubReleaseOptions,
+  type GithubReleaseDeps,
+  type GithubReleaseResult,
+} from './github.ts';
 import { generateReleaseNotes } from './release-notes.ts';
 import { writeTransactionLog } from './rollback.ts';
 import {
@@ -355,6 +361,15 @@ export interface ExecuteReleaseOptions {
   cwd?: string;
   /** Skip `git push`. */
   noPush?: boolean;
+  /** Skip GitHub Release creation. */
+  noGithubRelease?: boolean;
+  /** Environment variables (for GITHUB_TOKEN / GH_TOKEN). */
+  env?: Record<string, string | undefined>;
+  /** Override the GitHub release creator (for tests). */
+  createGithubRelease?: (
+    opts: CreateGithubReleaseOptions,
+    deps?: GithubReleaseDeps,
+  ) => Promise<GithubReleaseResult>;
 }
 
 export interface ExecuteReleaseResult {
@@ -370,6 +385,8 @@ export interface ExecuteReleaseResult {
   pushed: boolean;
   /** Relative paths of files modified by the release. */
   filesModified: string[];
+  /** GitHub Release result, or null if skipped/not attempted. */
+  githubRelease: GithubReleaseResult | null;
 }
 
 /**
@@ -432,7 +449,30 @@ export async function executeRelease(
     await push({ cwd });
   }
 
-  // --- 6. Write transaction log for `releasewise undo` ---
+  // --- 6. GitHub Release (if enabled and pushed) ---
+  const createRelease = opts.createGithubRelease ?? realCreateGithubRelease;
+  let githubRelease: GithubReleaseResult | null = null;
+  const shouldCreateRelease =
+    shouldPush &&
+    !opts.noGithubRelease &&
+    config.release.createGithubRelease &&
+    plan.remote !== null;
+
+  if (shouldCreateRelease) {
+    githubRelease = await createRelease({
+      tagName,
+      title: tagName,
+      body: `${plan.notes.heading}\n\n${plan.notes.body}`,
+      remote: plan.remote!,
+      cwd,
+      env: opts.env,
+    });
+  }
+
+  const githubReleaseId =
+    githubRelease?.status === 'created' ? githubRelease.releaseId : null;
+
+  // --- 7. Write transaction log for `releasewise undo` ---
   await writeTransactionLog(cwd, {
     timestamp: new Date().toISOString(),
     fromVersion: plan.currentVersion,
@@ -440,7 +480,7 @@ export async function executeRelease(
     bumpCommitSha: commitSha,
     tagName,
     pushed: shouldPush,
-    githubReleaseId: null,
+    githubReleaseId,
     filesModified: [pkgRelative, changelogRelative],
   });
 
@@ -451,5 +491,6 @@ export async function executeRelease(
     changelogPath: plan.changelogPath,
     pushed: shouldPush,
     filesModified: [pkgRelative, changelogRelative],
+    githubRelease,
   };
 }

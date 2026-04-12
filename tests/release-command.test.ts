@@ -190,6 +190,7 @@ function buildDeps(opts: BuildDepsOptions = {}): {
         changelogPath: o.plan.changelogPath,
         pushed: !o.noPush && o.config.release.pushOnRelease,
         filesModified: ['package.json', 'CHANGELOG.md'],
+        githubRelease: null,
       };
     },
   };
@@ -255,6 +256,7 @@ describe('runRelease — dry-run vs execute', () => {
           changelogPath: o.plan.changelogPath,
           pushed: false,
           filesModified: ['package.json', 'CHANGELOG.md'],
+          githubRelease: null,
         };
       },
     });
