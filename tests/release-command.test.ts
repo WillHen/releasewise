@@ -344,6 +344,53 @@ describe('runRelease — arg validation', () => {
   });
 });
 
+// --------- --tone validation ---------
+
+describe('runRelease — tone', () => {
+  it('rejects invalid --tone', async () => {
+    const { deps, sinks } = buildDeps();
+    const result = await runRelease({ dryRun: true, tone: 'silly' }, deps);
+    expect(result.exitCode).toBe(1);
+    expect(sinks.stderr).toContain('--tone');
+  });
+
+  it('passes valid --tone through to planRelease', async () => {
+    let capturedTone: string | undefined;
+    const { deps } = buildDeps({
+      planReleaseImpl: async (o) => {
+        capturedTone = o.tone;
+        return fakePlan();
+      },
+    });
+    const result = await runRelease({ dryRun: true, tone: 'casual' }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(capturedTone).toBe('casual');
+  });
+});
+
+// --------- --estimate ---------
+
+describe('runRelease — estimate', () => {
+  it('prints token estimate and exits without calling AI or executing', async () => {
+    const { deps, sinks, calls } = buildDeps();
+    const result = await runRelease({ estimate: true }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(sinks.stdout).toContain('Token estimate');
+    expect(sinks.stdout).toContain('Input tokens');
+    expect(calls.planRelease).toBe(0);
+    expect(calls.executeRelease).toBe(0);
+  });
+
+  it('prints JSON when --estimate --json', async () => {
+    const { deps, sinks } = buildDeps();
+    const result = await runRelease({ estimate: true, json: true }, deps);
+    expect(result.exitCode).toBe(0);
+    const parsed = JSON.parse(sinks.stdout);
+    expect(parsed.inputTokensEstimate).toBeGreaterThanOrEqual(0);
+    expect(parsed.maxOutputTokens).toBeDefined();
+  });
+});
+
 // --------- Provider wiring ---------
 
 describe('runRelease — provider wiring', () => {

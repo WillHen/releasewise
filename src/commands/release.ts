@@ -47,6 +47,7 @@ import {
   type ReleasePlan,
 } from '../core/orchestrator.ts';
 import type { AIProvider, BumpType } from '../types.ts';
+import { estimateTokens } from '../utils/token-estimator.ts';
 import { formatHumanPreview, formatJsonPreview } from '../utils/preview.ts';
 
 // --------- Public shape ---------
@@ -56,7 +57,9 @@ export interface RunReleaseArgs {
   mode?: string;
   pre?: string;
   from?: string;
+  tone?: string;
   dryRun?: boolean;
+  estimate?: boolean;
   noPush?: boolean;
   noGithubRelease?: boolean;
   json?: boolean;
@@ -121,6 +124,7 @@ export async function runRelease(
     const mode = parseModeArg(args.mode);
     const prerelease = parsePreArg(args.pre);
     const fromRef = parseFromArg(args.from);
+    const tone = parseToneArg(args.tone);
 
     // 3. Load config.
     const loaded = loadConfig({ cwd });
@@ -132,12 +136,41 @@ export async function runRelease(
       provider = getProvider({ config: loaded.config, apiKey: key.key });
     }
 
-    // 5. Collect repo inputs and build the plan.
+    // 5. Collect repo inputs.
     const inputs = await collectReleaseInputs({
       cwd,
       config: loaded.config,
       fromRef,
     });
+
+    // 5b. --estimate: print token/cost estimate and exit without calling AI.
+    if (args.estimate) {
+      const commitText = inputs.commits
+        .map((c) => `${c.subject}\n${c.body}`)
+        .join('\n');
+      const inputTokens =
+        estimateTokens(commitText) + estimateTokens(inputs.rawDiff);
+      const maxOutputTokens = loaded.config.ai.maxOutputTokens;
+      const estimate = {
+        commits: inputs.commits.length,
+        inputTokensEstimate: inputTokens,
+        maxOutputTokens,
+        totalTokensEstimate: inputTokens + maxOutputTokens,
+      };
+      if (args.json) {
+        stdout(`${JSON.stringify(estimate, null, 2)}\n`);
+      } else {
+        stdout(
+          `Token estimate for ${inputs.commits.length} commit(s):\n` +
+            `  Input tokens:  ~${inputTokens.toLocaleString()}\n` +
+            `  Max output:    ${maxOutputTokens.toLocaleString()}\n` +
+            `  Total budget:  ~${(inputTokens + maxOutputTokens).toLocaleString()}\n`,
+        );
+      }
+      return { exitCode: 0 };
+    }
+
+    // 6. Build the plan.
     const plan = await planRelease({
       inputs,
       config: loaded.config,
@@ -145,15 +178,16 @@ export async function runRelease(
       forceBump,
       prerelease,
       mode,
+      tone,
     });
 
-    // 6. Merge loader warnings in front of plan warnings (immutable).
+    // 7. Merge loader warnings in front of plan warnings (immutable).
     const merged: ReleasePlan = {
       ...plan,
       warnings: [...loaded.warnings, ...plan.warnings],
     };
 
-    // 7. Dry-run: render preview and exit.
+    // 8. Dry-run: render preview and exit.
     if (args.dryRun) {
       if (args.json) {
         stdout(`${JSON.stringify(formatJsonPreview(merged), null, 2)}\n`);
@@ -163,7 +197,7 @@ export async function runRelease(
       return { exitCode: 0 };
     }
 
-    // 8. Real release: require --yes or TTY auto-confirm.
+    // 9. Real release: require --yes or TTY auto-confirm.
     //    (Interactive prompting is deferred — for now, non-TTY implies
     //    --yes and interactive TTY without --yes is an error.)
     if (!autoConfirm) {
@@ -174,12 +208,12 @@ export async function runRelease(
       return { exitCode: 1 };
     }
 
-    // 9. Show the plan before executing so the user sees what's happening.
+    // 10. Show the plan before executing so the user sees what's happening.
     if (!args.json) {
       stdout(`${formatHumanPreview(merged)}\n\n`);
     }
 
-    // 10. Execute.
+    // 11. Execute.
     const result = await executeRelease({
       plan: merged,
       config: loaded.config,
@@ -189,7 +223,7 @@ export async function runRelease(
       env,
     });
 
-    // 11. Render outcome.
+    // 12. Render outcome.
     if (args.json) {
       stdout(
         `${JSON.stringify(
@@ -280,6 +314,23 @@ function parseFromArg(raw?: string): string | undefined {
   return raw;
 }
 
+function parseToneArg(
+  raw?: string,
+): 'formal' | 'casual' | 'technical' | undefined {
+  if (raw === undefined || raw.length === 0) return undefined;
+  const normalized = raw.toLowerCase();
+  if (
+    normalized === 'formal' ||
+    normalized === 'casual' ||
+    normalized === 'technical'
+  ) {
+    return normalized;
+  }
+  throw new Error(
+    `--tone must be one of: formal, casual, technical (got "${raw}")`,
+  );
+}
+
 // --------- citty wrapper ---------
 
 export const releaseCommand = defineCommand({
@@ -306,8 +357,7 @@ export const releaseCommand = defineCommand({
     },
     tone: {
       type: 'string',
-      description:
-        'Release notes tone: formal | casual | technical (not yet implemented)',
+      description: 'Release notes tone: formal | casual | technical',
     },
     yes: {
       type: 'boolean',
@@ -327,7 +377,7 @@ export const releaseCommand = defineCommand({
     },
     estimate: {
       type: 'boolean',
-      description: 'Print token/cost estimate and exit (Milestone B)',
+      description: 'Print token/cost estimate and exit without calling AI',
       default: false,
     },
     json: {
@@ -347,17 +397,17 @@ export const releaseCommand = defineCommand({
     },
     credits: {
       type: 'boolean',
-      description: 'Append contributor attribution to notes (Milestone B)',
+      description: 'Append contributor attribution to notes (v1.1+)',
       default: false,
     },
     quiet: {
       type: 'boolean',
-      description: 'Suppress step logs (Milestone B)',
+      description: 'Suppress step logs and warnings',
       default: false,
     },
     verbose: {
       type: 'boolean',
-      description: 'Verbose logging (Milestone B)',
+      description: 'Verbose logging with debug detail',
       default: false,
     },
   },
@@ -369,7 +419,9 @@ export const releaseCommand = defineCommand({
       mode: args.mode as string | undefined,
       pre: args.pre as string | undefined,
       from: args.from as string | undefined,
+      tone: args.tone as string | undefined,
       dryRun: Boolean(args['dry-run']),
+      estimate: Boolean(args.estimate),
       noPush: Boolean(args['no-push']),
       noGithubRelease: Boolean(args['no-github-release']),
       json: Boolean(args.json),

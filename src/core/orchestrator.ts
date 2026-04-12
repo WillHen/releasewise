@@ -171,6 +171,8 @@ export interface PlanReleaseOptions {
   date?: string;
   /** Commit classification mode override (from `--mode`). */
   mode?: 'conventional' | 'mixed';
+  /** Tone for AI-generated release notes (from `--tone` or config). */
+  tone?: 'formal' | 'casual' | 'technical';
 }
 
 export interface ReleasePlan {
@@ -260,6 +262,7 @@ export async function planRelease(
   const truncatedDiff = truncateDiff(inputs.rawDiff, config.ai.maxDiffTokens);
 
   // 7) Release notes (AI path or template fallback).
+  const tone = opts.tone ?? config.release.tone;
   const notes = await generateReleaseNotes({
     commits: inputs.commits,
     diff: truncatedDiff.content,
@@ -271,6 +274,7 @@ export async function planRelease(
     remote: inputs.remote,
     maxOutputTokens: config.ai.maxOutputTokens,
     temperature: config.ai.temperature,
+    tone,
   });
 
   // 8) Would-be CHANGELOG.md contents.

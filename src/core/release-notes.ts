@@ -76,6 +76,18 @@ BAD bullets that would be REJECTED:
   - "Release planning orchestrator that collects git and filesystem inputs" — user sees a command, not an orchestrator.
   - "AI provider factory with Anthropic adapter and retry wrapper" — three internal nouns; the user only sees "AI-generated release notes via Anthropic".`;
 
+const TONE_SUFFIXES: Record<string, string> = {
+  formal:
+    '\n\nTone: write in a formal, professional tone. Avoid contractions and colloquial language.',
+  casual:
+    '\n\nTone: write in a casual, friendly tone. Contractions are fine. Keep it approachable.',
+  technical: '', // Default — the base prompt is already technical.
+};
+
+function buildSystemPrompt(tone?: 'formal' | 'casual' | 'technical'): string {
+  return SYSTEM_PROMPT + (TONE_SUFFIXES[tone ?? 'technical'] ?? '');
+}
+
 // --------- User prompt ---------
 
 export interface UserPromptOptions {
@@ -285,6 +297,8 @@ export interface GenerateReleaseNotesOptions {
   maxOutputTokens?: number;
   /** Temperature for the AI call (from config.ai.temperature). */
   temperature?: number;
+  /** Tone for AI-generated notes: formal, casual, or technical (default). */
+  tone?: 'formal' | 'casual' | 'technical';
 }
 
 export async function generateReleaseNotes(
@@ -309,8 +323,9 @@ async function generateAIBodyWithFallback(
     diff: opts.diff,
     diffDroppedFiles: opts.diffDroppedFiles,
   });
+  const system = buildSystemPrompt(opts.tone);
   const result = await provider.generate({
-    system: SYSTEM_PROMPT,
+    system,
     user: userPrompt,
     maxTokens: opts.maxOutputTokens,
     temperature: opts.temperature,
