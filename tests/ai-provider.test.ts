@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 
 import type { AnthropicClient } from '../src/core/ai/anthropic.ts';
+import type { GeminiClient } from '../src/core/ai/gemini.ts';
+import type { OpenAIClient } from '../src/core/ai/openai.ts';
 import { getProvider } from '../src/core/ai/provider.ts';
 import { defaultConfig, type Config } from '../src/core/config.ts';
 
@@ -20,9 +22,28 @@ const stubAnthropicClient: AnthropicClient = {
   },
 };
 
+const stubOpenAIClient: OpenAIClient = {
+  chat: {
+    completions: {
+      create: async () => ({
+        choices: [{ message: { content: 'openai stub' } }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      }),
+    },
+  },
+};
+
+const stubGeminiClient: GeminiClient = {
+  generateContent: async () => ({
+    text: 'gemini stub',
+    usageMetadata: { promptTokenCount: 1, candidatesTokenCount: 1 },
+  }),
+};
+
 // --------- Tests ---------
 
 describe('getProvider', () => {
+  // Anthropic
   it('builds an Anthropic adapter when config.ai.provider = anthropic', () => {
     const config = configWith({
       provider: 'anthropic',
@@ -62,31 +83,120 @@ describe('getProvider', () => {
     expect(result.outputTokens).toBe(4);
   });
 
-  it('throws a clear not-yet-implemented error for openai', () => {
-    const config = configWith({ provider: 'openai' });
-    expect(() => getProvider({ config, apiKey: 'sk-test' })).toThrow(
-      /not yet implemented/i,
-    );
+  // OpenAI
+  it('builds an OpenAI adapter when config.ai.provider = openai', () => {
+    const config = configWith({ provider: 'openai', model: 'gpt-4o' });
+    const provider = getProvider({
+      config,
+      apiKey: 'sk-test',
+      openaiClient: stubOpenAIClient,
+    });
+    expect(provider.name).toBe('openai');
+    expect(provider.defaultModel).toBe('gpt-4o');
   });
 
-  it('throws a clear not-yet-implemented error for groq', () => {
-    const config = configWith({ provider: 'groq' });
-    expect(() => getProvider({ config, apiKey: 'sk-test' })).toThrow(
-      /not yet implemented/i,
-    );
+  it('uses the injected OpenAI client end-to-end', async () => {
+    let calls = 0;
+    const client: OpenAIClient = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls++;
+            return {
+              choices: [{ message: { content: 'from openai fake' } }],
+              usage: { prompt_tokens: 5, completion_tokens: 6 },
+            };
+          },
+        },
+      },
+    };
+    const provider = getProvider({
+      config: configWith({ provider: 'openai' }),
+      apiKey: 'sk-test',
+      openaiClient: client,
+    });
+    const result = await provider.generate({ system: 's', user: 'u' });
+    expect(calls).toBe(1);
+    expect(result.text).toBe('from openai fake');
+    expect(result.inputTokens).toBe(5);
+    expect(result.outputTokens).toBe(6);
   });
 
-  it('throws a clear not-yet-implemented error for gemini', () => {
-    const config = configWith({ provider: 'gemini' });
-    expect(() => getProvider({ config, apiKey: 'sk-test' })).toThrow(
-      /not yet implemented/i,
-    );
+  // Groq
+  it('builds a Groq adapter (name = "groq") using the OpenAI client', () => {
+    const config = configWith({
+      provider: 'groq',
+      model: 'llama-3.3-70b-versatile',
+    });
+    const provider = getProvider({
+      config,
+      apiKey: 'gsk-test',
+      openaiClient: stubOpenAIClient,
+    });
+    expect(provider.name).toBe('groq');
+    expect(provider.defaultModel).toBe('llama-3.3-70b-versatile');
   });
 
-  it('mentions Step 10 in the not-yet-implemented error so users know when it is coming', () => {
-    const config = configWith({ provider: 'openai' });
-    expect(() => getProvider({ config, apiKey: 'sk-test' })).toThrow(
-      /step 10/i,
-    );
+  it('uses the injected OpenAI client for Groq end-to-end', async () => {
+    let calls = 0;
+    const client: OpenAIClient = {
+      chat: {
+        completions: {
+          create: async () => {
+            calls++;
+            return {
+              choices: [{ message: { content: 'from groq fake' } }],
+              usage: { prompt_tokens: 2, completion_tokens: 3 },
+            };
+          },
+        },
+      },
+    };
+    const provider = getProvider({
+      config: configWith({ provider: 'groq' }),
+      apiKey: 'gsk-test',
+      openaiClient: client,
+    });
+    const result = await provider.generate({ system: 's', user: 'u' });
+    expect(calls).toBe(1);
+    expect(result.text).toBe('from groq fake');
+  });
+
+  // Gemini
+  it('builds a Gemini adapter when config.ai.provider = gemini', () => {
+    const config = configWith({
+      provider: 'gemini',
+      model: 'gemini-2.0-flash',
+    });
+    const provider = getProvider({
+      config,
+      apiKey: 'test-key',
+      geminiClient: stubGeminiClient,
+    });
+    expect(provider.name).toBe('gemini');
+    expect(provider.defaultModel).toBe('gemini-2.0-flash');
+  });
+
+  it('uses the injected Gemini client end-to-end', async () => {
+    let calls = 0;
+    const client: GeminiClient = {
+      generateContent: async () => {
+        calls++;
+        return {
+          text: 'from gemini fake',
+          usageMetadata: { promptTokenCount: 8, candidatesTokenCount: 9 },
+        };
+      },
+    };
+    const provider = getProvider({
+      config: configWith({ provider: 'gemini' }),
+      apiKey: 'test-key',
+      geminiClient: client,
+    });
+    const result = await provider.generate({ system: 's', user: 'u' });
+    expect(calls).toBe(1);
+    expect(result.text).toBe('from gemini fake');
+    expect(result.inputTokens).toBe(8);
+    expect(result.outputTokens).toBe(9);
   });
 });
