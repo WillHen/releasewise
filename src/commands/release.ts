@@ -1,5 +1,5 @@
 /**
- * `releasewise release` command — the primary entry point for creating releases.
+ * `releasewise release` command.
  *
  * Structure:
  *
