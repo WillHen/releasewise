@@ -1,3 +1,4 @@
+import { $ } from 'bun';
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -34,7 +35,7 @@ function passingDeps(overrides?: Partial<RunDoctorDeps>): RunDoctorDeps {
   return {
     cwd: tmpDir,
     env: { ANTHROPIC_API_KEY: 'sk-test' },
-    isGitRepo: () => true,
+    isGitRepo: async () => true,
     isGhInstalled: async () => true,
     loadConfig: () => ({
       config: defaultConfig(),
@@ -64,7 +65,7 @@ describe('runDoctor', () => {
   it('fails when not a git repo', async () => {
     const sinks = capture();
     const result = await runDoctor({
-      ...passingDeps({ isGitRepo: () => false }),
+      ...passingDeps({ isGitRepo: async () => false }),
       ...sinks,
     });
 
@@ -131,6 +132,60 @@ describe('runDoctor', () => {
     const pkgCheck = result.checks.find((c) => c.name === 'package.json');
     expect(pkgCheck?.status).toBe('fail');
     rmSync(emptyDir, { recursive: true, force: true });
+  });
+
+  it('detects a git worktree (where .git is a file, not a directory)', async () => {
+    // Real repo on disk: init, make a commit, then add a worktree. The
+    // worktree's `.git` is a regular file containing `gitdir: <path>`.
+    // The old filesystem-only check (existsSync(".git") — statable but
+    // that's fine) used to return true for this too, but the point of
+    // the fix is to drop the filesystem heuristic entirely in favor of
+    // `git rev-parse --is-inside-work-tree`. Exercise the default path
+    // (no isGitRepo override) to verify.
+    const mainRepo = mkdtempSync(join(tmpdir(), 'releasewise-wt-main-'));
+    const wtDir = mkdtempSync(join(tmpdir(), 'releasewise-wt-leaf-'));
+    // mkdtemp made wtDir as an existing directory — remove it so `git
+    // worktree add` can create it fresh.
+    rmSync(wtDir, { recursive: true, force: true });
+
+    try {
+      await $`git init -b main`.cwd(mainRepo).quiet();
+      writeFileSync(join(mainRepo, 'a.txt'), 'x');
+      await $`git -c user.name=t -c user.email=t@x -c commit.gpgsign=false add a.txt`
+        .cwd(mainRepo)
+        .quiet();
+      await $`git -c user.name=t -c user.email=t@x -c commit.gpgsign=false commit -m init`
+        .cwd(mainRepo)
+        .quiet();
+      await $`git worktree add -b wt-branch ${wtDir}`.cwd(mainRepo).quiet();
+      writeFileSync(join(wtDir, 'package.json'), '{"name":"wt"}');
+
+      const sinks = capture();
+      const result = await runDoctor({
+        cwd: wtDir,
+        env: { ANTHROPIC_API_KEY: 'sk-test' },
+        // Note: no isGitRepo override — exercises the real default.
+        isGhInstalled: async () => true,
+        loadConfig: () => ({
+          config: defaultConfig(),
+          warnings: [],
+          baseConfigPath: '/fake/.releasewise.json',
+          localConfigPath: null,
+        }),
+        resolveApiKey: () => ({
+          key: 'sk-test',
+          source: 'provider-env' as const,
+          envVarName: 'ANTHROPIC_API_KEY',
+        }),
+        ...sinks,
+      });
+
+      const gitCheck = result.checks.find((c) => c.name === 'Git repo');
+      expect(gitCheck?.status).toBe('pass');
+    } finally {
+      rmSync(wtDir, { recursive: true, force: true });
+      rmSync(mainRepo, { recursive: true, force: true });
+    }
   });
 
   it('renders status icons correctly', async () => {

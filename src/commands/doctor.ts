@@ -18,6 +18,7 @@ import {
   resolveApiKey as realResolveApiKey,
   type ResolvedApiKey,
 } from '../core/config-resolver.ts';
+import { isGitRepo as realIsGitRepo } from '../core/git.ts';
 
 // --------- Public shape ---------
 
@@ -30,7 +31,7 @@ export interface RunDoctorDeps {
     config: LoadedConfig['config'],
     opts?: { env?: Record<string, string | undefined> },
   ) => ResolvedApiKey;
-  isGitRepo?: (cwd: string) => boolean;
+  isGitRepo?: (cwd: string) => Promise<boolean>;
   isGhInstalled?: () => Promise<boolean>;
 }
 
@@ -55,13 +56,14 @@ export async function runDoctor(
   const env = deps.env ?? process.env;
   const loadConfig = deps.loadConfig ?? realLoadConfig;
   const resolveApiKey = deps.resolveApiKey ?? realResolveApiKey;
-  const isGitRepo = deps.isGitRepo ?? defaultIsGitRepo;
+  const isGitRepo =
+    deps.isGitRepo ?? ((dir: string) => realIsGitRepo({ cwd: dir }));
   const isGhInstalled = deps.isGhInstalled ?? defaultIsGhInstalled;
 
   const checks: DoctorCheck[] = [];
 
   // 1. Git repo
-  if (isGitRepo(cwd)) {
+  if (await isGitRepo(cwd)) {
     checks.push({ name: 'Git repo', status: 'pass', message: 'Found' });
   } else {
     checks.push({
@@ -161,10 +163,6 @@ export async function runDoctor(
 }
 
 // --------- Default implementations ---------
-
-function defaultIsGitRepo(cwd: string): boolean {
-  return existsSync(join(cwd, '.git'));
-}
 
 async function defaultIsGhInstalled(): Promise<boolean> {
   try {
