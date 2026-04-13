@@ -87,6 +87,24 @@ This applies to every commit, including docs-only and CI-only changes.
 If a change is split across several logical commits, pause for review
 before each one — don't batch them.
 
+### Staging and committing must be separate tool calls
+
+A `PreToolUse` Bash hook (`~/.claude/hooks/review-staged.sh`) runs a
+senior-lead-dev review over `git diff --cached` whenever it sees a
+`git commit` command. Because the hook fires **before** the bash
+command runs, it can only review content that is _already staged_.
+
+That means: do **not** combine staging and committing into a single
+tool call (e.g. `git add X && git commit ...`). If you do, at hook
+time nothing is staged, the review is skipped, and the commit lands
+unreviewed.
+
+The correct sequence is two Bash calls:
+
+1. `git add <specific files>` (stages the content — hook does not fire).
+2. `git commit -m "..."` (hook fires, reviews the staged diff, feeds
+   the review back into context; act on `MUST FIX` before continuing).
+
 ## Pre-commit checklist
 
 **Always run `bun run check` before every commit.** This runs, in order:
