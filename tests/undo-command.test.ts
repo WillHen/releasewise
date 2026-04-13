@@ -53,6 +53,9 @@ function makeDeps(
     resetHard: async (ref: string) => {
       captured.resetRefs.push(ref);
     },
+    // By default: parent exists; return a stable fake parent SHA.
+    resolveRef: async (_ref: string) =>
+      'parent0000000000000000000000000000000000',
     ...overrides,
   };
 
@@ -90,14 +93,22 @@ describe('runUndo', () => {
     expect(captured.stderr).toContain('uncommitted changes');
   });
 
-  it('deletes the tag and resets the commit on success', async () => {
+  it('deletes the tag and resets to the resolved parent on success', async () => {
     const log = sampleLog();
-    const { deps, captured } = makeDeps(log);
+    const queriedRefs: string[] = [];
+    const parentSha = 'parent0000000000000000000000000000000000';
+    const { deps, captured } = makeDeps(log, {
+      resolveRef: async (ref: string) => {
+        queriedRefs.push(ref);
+        return parentSha;
+      },
+    });
     const result = await runUndo(deps);
 
     expect(result.exitCode).toBe(0);
     expect(captured.deletedTags).toEqual(['v1.1.0']);
-    expect(captured.resetRefs).toEqual([`${log.bumpCommitSha}^`]);
+    expect(queriedRefs).toEqual([`${log.bumpCommitSha}^`]);
+    expect(captured.resetRefs).toEqual([parentSha]);
     expect(captured.stdout).toContain('Undone: v1.1.0');
     expect(captured.stdout).toContain('Tag deleted:    v1.1.0');
     expect(captured.stdout).toContain('Version restored: 1.0.0');
@@ -112,13 +123,29 @@ describe('runUndo', () => {
     expect(captured.stdout).toContain('Tag deleted:    (none)');
   });
 
-  it('skips commit reset when bumpCommitSha is null', async () => {
+  it('errors when bumpCommitSha is null (malformed transaction log)', async () => {
     const { deps, captured } = makeDeps(sampleLog({ bumpCommitSha: null }));
     const result = await runUndo(deps);
 
-    expect(result.exitCode).toBe(0);
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain('missing `bumpCommitSha`');
+    // Nothing was touched.
+    expect(captured.deletedTags).toEqual([]);
     expect(captured.resetRefs).toEqual([]);
-    expect(captured.stdout).toContain('Commit reverted: (none)');
+  });
+
+  it('errors cleanly when the release commit has no parent (root commit)', async () => {
+    const { deps, captured } = makeDeps(sampleLog(), {
+      resolveRef: async () => null, // parent doesn't resolve
+    });
+    const result = await runUndo(deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain('root commit');
+    expect(captured.stderr).toContain('git update-ref -d HEAD');
+    // Refuses to touch anything in the dangerous path.
+    expect(captured.deletedTags).toEqual([]);
+    expect(captured.resetRefs).toEqual([]);
   });
 
   it('catches and reports errors from git operations', async () => {

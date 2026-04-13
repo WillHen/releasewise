@@ -14,6 +14,7 @@ import {
   deleteTag as realDeleteTag,
   isClean as realIsClean,
   resetHard as realResetHard,
+  resolveRef as realResolveRef,
 } from '../core/git.ts';
 import {
   readTransactionLog as realReadTransactionLog,
@@ -31,6 +32,7 @@ export interface RunUndoDeps {
   isClean?: (opts: { cwd: string }) => Promise<boolean>;
   deleteTag?: (name: string, opts: { cwd: string }) => Promise<void>;
   resetHard?: (ref: string, opts: { cwd: string }) => Promise<void>;
+  resolveRef?: (ref: string, opts: { cwd: string }) => Promise<string | null>;
 }
 
 export interface RunUndoResult {
@@ -47,6 +49,7 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
   const isClean = deps.isClean ?? realIsClean;
   const deleteTag = deps.deleteTag ?? realDeleteTag;
   const resetHard = deps.resetHard ?? realResetHard;
+  const resolveRef = deps.resolveRef ?? realResolveRef;
 
   try {
     // 1. Read the transaction log.
@@ -81,15 +84,39 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
       return { exitCode: 1 };
     }
 
-    // 4. Delete the tag (if one was created).
+    // 4. The transaction log must name the commit we're undoing.
+    if (!log.bumpCommitSha) {
+      stderr(
+        'Error: transaction log is missing `bumpCommitSha`.\n' +
+          'The log is incomplete and undo cannot run automatically.\n',
+      );
+      return { exitCode: 1 };
+    }
+
+    // 5. Resolve the parent commit BEFORE touching anything. If the
+    // release commit is a root commit, `<sha>^` has no parent and
+    // `git reset --hard` would fail midway — better to stop here and
+    // give the user a clean manual recipe.
+    const parent = await resolveRef(`${log.bumpCommitSha}^`, { cwd });
+    if (!parent) {
+      stderr(
+        `Error: release commit ${log.bumpCommitSha.slice(0, 7)} has no parent (it is a root commit).\n` +
+          'Automatic undo is not supported for root-commit releases. ' +
+          'To recover manually:\n\n' +
+          `  git update-ref -d HEAD\n` +
+          `  git rm -rf .\n` +
+          (log.tagName ? `  git tag -d ${log.tagName}\n` : ''),
+      );
+      return { exitCode: 1 };
+    }
+
+    // 6. Delete the tag (if one was created).
     if (log.tagName) {
       await deleteTag(log.tagName, { cwd });
     }
 
-    // 5. Reset the bump commit.
-    if (log.bumpCommitSha) {
-      await resetHard(`${log.bumpCommitSha}^`, { cwd });
-    }
+    // 7. Reset to the parent.
+    await resetHard(parent, { cwd });
 
     // 6. Report success.
     stdout(

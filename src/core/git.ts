@@ -169,6 +169,27 @@ export async function getLastTag(
   return name.length > 0 ? name : null;
 }
 
+/**
+ * Resolve a ref expression (SHA, tag, branch, `<sha>^`, …) to its full
+ * commit SHA. Returns null if the ref doesn't exist — use this to probe
+ * for refs that may or may not resolve (e.g. the parent of a potential
+ * root commit before a `reset --hard`).
+ */
+export async function resolveRef(
+  ref: string,
+  opts: GitCommandOptions = {},
+): Promise<string | null> {
+  assertSafeArg(ref, 'ref');
+  const cwd = opts.cwd ?? process.cwd();
+  const result = await $`git rev-parse --verify ${ref}`
+    .cwd(cwd)
+    .quiet()
+    .nothrow();
+  if (result.exitCode !== 0) return null;
+  const sha = result.stdout.toString().trim();
+  return sha.length > 0 ? sha : null;
+}
+
 /** SHA of the first (root) commit reachable from HEAD. */
 export async function getRootCommit(
   opts: GitCommandOptions = {},
