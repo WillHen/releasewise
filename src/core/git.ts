@@ -24,6 +24,33 @@ export interface GitCommandOptions {
 
 // --------- Internal helpers ---------
 
+/**
+ * Reject argv values that could be reinterpreted as flags by git/gh, or
+ * that contain control characters. Bun's `$` template already prevents
+ * *shell* injection by passing each interpolation as a distinct argv
+ * entry — but the invoked tool still parses argv, so a value like "-d"
+ * passed where a tag name is expected becomes a `--delete` flag.
+ *
+ * Applied to every user-controlled argv: tag names, refs, remote names,
+ * and ref-range endpoints. Commit messages are exempt because they're
+ * the value of a `-m` flag (single-argv) and legitimately start with '-'.
+ * Paths are exempt because we always pass them after a `--` separator.
+ */
+export function assertSafeArg(value: string, field: string): void {
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new Error(`git: ${field} must be a non-empty string`);
+  }
+  if (value.startsWith('-')) {
+    throw new Error(
+      `git: ${field} must not begin with '-' (got ${JSON.stringify(value)})`,
+    );
+  }
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x08\x0a-\x1f\x7f]/.test(value)) {
+    throw new Error(`git: ${field} contains control characters`);
+  }
+}
+
 const RECORD_SEP = '\x1e'; // commit boundary
 const UNIT_SEP = '\x1f'; // field boundary
 
@@ -168,7 +195,10 @@ export async function getBaseRef(
   explicit?: string,
   opts: GitCommandOptions = {},
 ): Promise<string> {
-  if (explicit && explicit.length > 0) return explicit;
+  if (explicit && explicit.length > 0) {
+    assertSafeArg(explicit, 'baseRef');
+    return explicit;
+  }
   const lastTag = await getLastTag(opts);
   if (lastTag) return lastTag;
   return getRootCommit(opts);
@@ -183,6 +213,8 @@ export async function getCommitsBetween(
   to: string,
   opts: GitCommandOptions = {},
 ): Promise<Commit[]> {
+  assertSafeArg(from, 'from');
+  assertSafeArg(to, 'to');
   const cwd = opts.cwd ?? process.cwd();
   const range = `${from}..${to}`;
   const format = `--format=${COMMIT_FORMAT}${RECORD_SEP}`;
@@ -196,6 +228,8 @@ export async function getDiffBetween(
   to: string,
   opts: GitCommandOptions = {},
 ): Promise<string> {
+  assertSafeArg(from, 'from');
+  assertSafeArg(to, 'to');
   const cwd = opts.cwd ?? process.cwd();
   const out = await $`git diff ${from} ${to}`.cwd(cwd).text();
   return out;
@@ -207,6 +241,8 @@ export async function getDiffStat(
   to: string,
   opts: GitCommandOptions = {},
 ): Promise<string> {
+  assertSafeArg(from, 'from');
+  assertSafeArg(to, 'to');
   const cwd = opts.cwd ?? process.cwd();
   const out = await $`git diff --stat ${from} ${to}`.cwd(cwd).text();
   return out.trim();
@@ -220,6 +256,7 @@ export async function getRemoteUrl(
   remoteName = 'origin',
   opts: GitCommandOptions = {},
 ): Promise<string | null> {
+  assertSafeArg(remoteName, 'remoteName');
   const cwd = opts.cwd ?? process.cwd();
   const result = await $`git remote get-url ${remoteName}`
     .cwd(cwd)
@@ -283,6 +320,7 @@ export async function createTag(
   message?: string,
   opts: GitCommandOptions = {},
 ): Promise<void> {
+  assertSafeArg(name, 'tag name');
   const cwd = opts.cwd ?? process.cwd();
   if (message && message.length > 0) {
     await $`git tag -a ${name} -m ${message}`.cwd(cwd).quiet();
@@ -299,6 +337,7 @@ export async function deleteTag(
   name: string,
   opts: GitCommandOptions = {},
 ): Promise<void> {
+  assertSafeArg(name, 'tag name');
   const cwd = opts.cwd ?? process.cwd();
   await $`git tag -d ${name}`.cwd(cwd).quiet().nothrow();
 }
@@ -325,6 +364,9 @@ export async function push(opts: PushOptions = {}): Promise<void> {
   const remote = opts.remote ?? 'origin';
   const followTags = opts.followTags ?? true;
 
+  assertSafeArg(remote, 'remote');
+  if (opts.ref) assertSafeArg(opts.ref, 'ref');
+
   if (opts.ref) {
     if (followTags) {
       await $`git push --follow-tags ${remote} ${opts.ref}`.cwd(cwd).quiet();
@@ -347,6 +389,7 @@ export async function resetHard(
   ref: string,
   opts: GitCommandOptions = {},
 ): Promise<void> {
+  assertSafeArg(ref, 'ref');
   const cwd = opts.cwd ?? process.cwd();
   await $`git reset --hard ${ref}`.cwd(cwd).quiet();
 }

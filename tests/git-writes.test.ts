@@ -216,3 +216,42 @@ describe('resetHard', () => {
     expect(await getHeadSha({ cwd: fx.dir })).toBe(first);
   });
 });
+
+// ---------- argv-as-flag guards ----------
+
+describe('argv-as-flag guards', () => {
+  beforeEach(async () => {
+    fx.writeFile('a.txt', '1');
+    await fx.commit('chore: init');
+  });
+
+  it('createTag rejects a name beginning with "-"', async () => {
+    await expect(
+      createTag('--delete v0.1.0', undefined, { cwd: fx.dir }),
+    ).rejects.toThrow(/tag name.*must not begin with '-'/);
+  });
+
+  it('deleteTag rejects a name beginning with "-"', async () => {
+    await expect(deleteTag('-d', { cwd: fx.dir })).rejects.toThrow(
+      /tag name.*must not begin with '-'/,
+    );
+  });
+
+  it('resetHard rejects a ref beginning with "-"', async () => {
+    await expect(resetHard('--hard', { cwd: fx.dir })).rejects.toThrow(
+      /ref.*must not begin with '-'/,
+    );
+  });
+
+  it('push rejects a ref beginning with "-"', async () => {
+    await expect(push({ cwd: fx.dir, ref: '-f' })).rejects.toThrow(
+      /ref.*must not begin with '-'/,
+    );
+  });
+
+  it('createTag rejects names with embedded newlines', async () => {
+    await expect(
+      createTag('v0.1.0\ninjected', undefined, { cwd: fx.dir }),
+    ).rejects.toThrow(/control characters/);
+  });
+});

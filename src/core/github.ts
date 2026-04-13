@@ -18,6 +18,7 @@
 import { $ } from 'bun';
 
 import type { RemoteInfo } from '../types.ts';
+import { assertSafeArg } from './git.ts';
 
 // --------- Public types ---------
 
@@ -126,9 +127,15 @@ async function defaultIsGhAvailable(cwd: string): Promise<boolean> {
 async function defaultGhCreateRelease(
   opts: CreateGithubReleaseOptions,
 ): Promise<{ url: string }> {
+  assertSafeArg(opts.tagName, 'tagName');
+  assertSafeArg(opts.remote.owner, 'remote.owner');
+  assertSafeArg(opts.remote.repo, 'remote.repo');
   const repo = `${opts.remote.owner}/${opts.remote.repo}`;
+  // Use `--flag=value` form so the title/body can never be parsed as a
+  // flag even if they begin with '-'. Each interpolation is still one
+  // argv entry (Bun `$`), so no shell escaping concerns.
   const result =
-    await $`gh release create ${opts.tagName} --repo ${repo} --title ${opts.title} --notes ${opts.body}`
+    await $`gh release create ${opts.tagName} --repo=${repo} --title=${opts.title} --notes=${opts.body}`
       .cwd(opts.cwd)
       .text();
 
