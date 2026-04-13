@@ -39,6 +39,18 @@ export interface CreateGithubReleaseOptions {
 
 export type GithubReleaseResult =
   | { status: 'created'; releaseId: string; url: string; method: 'gh' | 'api' }
+  | {
+      status: 'failed';
+      /** Which strategy's error is reflected in `error` (the last one tried). */
+      method: 'gh' | 'api';
+      /**
+       * Summary of every strategy that was tried, with its error message.
+       * Tokens are redacted and the total length is capped so the line
+       * stays readable in the CLI summary.
+       */
+      error: string;
+      manualCommand: string;
+    }
   | { status: 'skipped'; reason: string; manualCommand: string };
 
 export interface GithubReleaseDeps {
@@ -70,6 +82,9 @@ export async function createGithubRelease(
     `--repo ${opts.remote.owner}/${opts.remote.repo} ` +
     `--title "${opts.title}" --notes "..."`;
 
+  const token = env.GITHUB_TOKEN ?? env.GH_TOKEN;
+  const attempts: Array<{ method: 'gh' | 'api'; error: string }> = [];
+
   // Strategy 1: gh CLI.
   if (await isGhAvailable(opts.cwd)) {
     try {
@@ -81,13 +96,13 @@ export async function createGithubRelease(
         url: result.url,
         method: 'gh',
       };
-    } catch {
+    } catch (err) {
+      attempts.push({ method: 'gh', error: summarizeError(err, token) });
       // Fall through to API strategy.
     }
   }
 
   // Strategy 2: REST API with token.
-  const token = env.GITHUB_TOKEN ?? env.GH_TOKEN;
   if (token) {
     try {
       const result = await apiCreate({ ...opts, token });
@@ -97,12 +112,24 @@ export async function createGithubRelease(
         url: result.url,
         method: 'api',
       };
-    } catch {
-      // Fall through to skipped.
+    } catch (err) {
+      attempts.push({ method: 'api', error: summarizeError(err, token) });
+      // Fall through to failed/skipped.
     }
   }
 
-  // Neither worked — tell the user what to do.
+  if (attempts.length > 0) {
+    const last = attempts[attempts.length - 1]!;
+    const combined = attempts.map((a) => `${a.method}: ${a.error}`).join('; ');
+    return {
+      status: 'failed',
+      method: last.method,
+      error: combined,
+      manualCommand,
+    };
+  }
+
+  // Nothing was tried — missing both gh and any token.
   return {
     status: 'skipped',
     reason:
@@ -110,6 +137,19 @@ export async function createGithubRelease(
       'GITHUB_TOKEN / GH_TOKEN found in environment.',
     manualCommand,
   };
+}
+
+/**
+ * Turn a thrown error into a short, safe one-line summary for embedding
+ * in a release result: strip the token if we know it, collapse
+ * whitespace, and truncate to keep CLI output readable.
+ */
+function summarizeError(err: unknown, token: string | undefined): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const redacted = token ? raw.split(token).join('***') : raw;
+  const collapsed = redacted.replace(/\s+/g, ' ').trim();
+  const MAX = 500;
+  return collapsed.length > MAX ? `${collapsed.slice(0, MAX)}…` : collapsed;
 }
 
 // --------- Default implementations ---------

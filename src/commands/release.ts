@@ -249,6 +249,10 @@ export async function runRelease(
         ghLine = `  Release:   ${result.githubRelease.url}\n`;
       } else if (result.githubRelease?.status === 'skipped') {
         ghLine = `  Release:   skipped — ${result.githubRelease.reason}\n`;
+      } else if (result.githubRelease?.status === 'failed') {
+        ghLine =
+          `  Release:   failed via ${result.githubRelease.method} — ${result.githubRelease.error}\n` +
+          `             Retry manually: ${result.githubRelease.manualCommand}\n`;
       }
       stdout(
         `\nReleased ${result.tagName}\n` +

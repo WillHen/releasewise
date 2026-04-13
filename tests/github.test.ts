@@ -153,7 +153,7 @@ describe('createGithubRelease — skipped', () => {
     }
   });
 
-  it('returns skipped when both gh and API fail', async () => {
+  it('returns failed (not skipped) when both gh and API fail', async () => {
     const deps: GithubReleaseDeps = {
       isGhAvailable: async () => true,
       ghCreateRelease: async () => {
@@ -168,7 +168,63 @@ describe('createGithubRelease — skipped', () => {
     const opts = baseOpts({ env: { GITHUB_TOKEN: 'ghp_test' } });
     const result = await createGithubRelease(opts, deps);
 
-    expect(result.status).toBe('skipped');
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      // Last attempt is the API one, so method should reflect that.
+      expect(result.method).toBe('api');
+      // But both errors should be present in the summary.
+      expect(result.error).toContain('gh: gh broke');
+      expect(result.error).toContain('api: api broke');
+      expect(result.manualCommand).toContain('gh release create v1.2.3');
+    }
+  });
+
+  it('returns failed when gh errors and no token is available', async () => {
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => true,
+      ghCreateRelease: async () => {
+        throw new Error('gh permission denied');
+      },
+    };
+    const result = await createGithubRelease(baseOpts({ env: {} }), deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.method).toBe('gh');
+      expect(result.error).toContain('gh permission denied');
+    }
+  });
+
+  it('returns failed when gh is not available and the API call errors', async () => {
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => false,
+      apiCreateRelease: async () => {
+        throw new Error('GitHub API returned 422: validation failed');
+      },
+    };
+    const opts = baseOpts({ env: { GITHUB_TOKEN: 'ghp_live' } });
+    const result = await createGithubRelease(opts, deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.method).toBe('api');
+      expect(result.error).toContain('422');
+    }
+  });
+
+  it('redacts the auth token from any error message', async () => {
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => false,
+      apiCreateRelease: async () => {
+        // Simulate an error message that accidentally echoes the token.
+        throw new Error('401: Bad credentials for token ghp_supersecret');
+      },
+    };
+    const opts = baseOpts({ env: { GITHUB_TOKEN: 'ghp_supersecret' } });
+    const result = await createGithubRelease(opts, deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.error).not.toContain('ghp_supersecret');
+      expect(result.error).toContain('***');
+    }
   });
 
   it('passes tag, title, body, and remote to gh', async () => {
