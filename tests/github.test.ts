@@ -227,6 +227,34 @@ describe('createGithubRelease — skipped', () => {
     }
   });
 
+  it('treats a malformed API response shape as a failed release', async () => {
+    // Drive the real `defaultApiCreateRelease` path by NOT injecting
+    // apiCreateRelease, then mock global fetch to return a response the
+    // schema will reject (missing `id`, bad `html_url`).
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ html_url: 'not-a-url' }), {
+        status: 201,
+        headers: { 'Content-Type': 'application/json' },
+      })) as unknown as typeof globalThis.fetch;
+
+    try {
+      const deps: GithubReleaseDeps = {
+        isGhAvailable: async () => false,
+      };
+      const opts = baseOpts({ env: { GITHUB_TOKEN: 'ghp_schema_test' } });
+      const result = await createGithubRelease(opts, deps);
+
+      expect(result.status).toBe('failed');
+      if (result.status === 'failed') {
+        expect(result.method).toBe('api');
+        expect(result.error).toContain('unexpected response shape');
+      }
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   it('passes tag, title, body, and remote to gh', async () => {
     let captured: CreateGithubReleaseOptions | undefined;
     const deps: GithubReleaseDeps = {

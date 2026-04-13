@@ -16,9 +16,15 @@
  * deterministic (no real `gh` calls, no network).
  */
 import { $ } from 'bun';
+import { z } from 'zod';
 
 import type { RemoteInfo } from '../types.ts';
 import { assertSafeArg } from './git.ts';
+
+const GithubReleaseResponseSchema = z.object({
+  id: z.number(),
+  html_url: z.string().url(),
+});
 
 // --------- Public types ---------
 
@@ -217,6 +223,12 @@ async function defaultApiCreateRelease(
     );
   }
 
-  const data = (await response.json()) as { id: number; html_url: string };
-  return { id: data.id, url: data.html_url };
+  const raw: unknown = await response.json();
+  const parsed = GithubReleaseResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    throw new Error(
+      `GitHub API returned an unexpected response shape: ${parsed.error.message}`,
+    );
+  }
+  return { id: parsed.data.id, url: parsed.data.html_url };
 }
