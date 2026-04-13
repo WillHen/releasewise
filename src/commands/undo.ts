@@ -118,7 +118,7 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
     // 7. Reset to the parent.
     await resetHard(parent, { cwd });
 
-    // 6. Report success.
+    // 8. Report success.
     stdout(
       `Undone: ${log.tagName ?? log.toVersion}\n` +
         `  Tag deleted:    ${log.tagName ?? '(none)'}\n` +
