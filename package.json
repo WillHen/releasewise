@@ -4,7 +4,7 @@
   "description": "AI-powered CLI that turns a git diff into a high-quality release — semver bump, changelog, tag, push, and GitHub Release in one command.",
   "type": "module",
   "bin": {
-    "releasewise": "./dist/index.js"
+    "releasewise": "dist/index.js"
   },
   "main": "./dist/index.js",
   "module": "./src/index.ts",
@@ -38,7 +38,7 @@
   "author": "William Henshaw",
   "repository": {
     "type": "git",
-    "url": "https://github.com/WillHen/releasewise.git"
+    "url": "git+https://github.com/WillHen/releasewise.git"
   },
   "homepage": "https://github.com/WillHen/releasewise",
   "license": "MIT",
