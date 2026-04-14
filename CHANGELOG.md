@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-14
+
+### Fixed
+
+- AI classification silently falling back to "patch" for all unrecognized commits when a repo had 20+ non-conventional commits — the AI call is now split into batches of 20 so the JSON response is never truncated mid-stream
+- A failed AI classification batch poisoning unrelated commits — each batch now fails independently, leaving other batches' results intact
+- Truncated AI responses that open a ` ```json ` fence but are cut off before the closing fence now parse correctly instead of being discarded
+
 ## [0.2.0] - 2026-04-13
 
 ### Fixed
