@@ -123,9 +123,14 @@ interface RawClassification {
 export function parseClassifierResponse(text: string): RawClassification[] {
   let trimmed = text.trim();
 
-  // Strip a surrounding ``` / ```json fence if present.
-  const fenceMatch = /^```(?:[a-zA-Z]+)?\s*\n([\s\S]*?)\n```\s*$/.exec(trimmed);
-  if (fenceMatch) trimmed = fenceMatch[1]!.trim();
+  // Strip a leading ``` or ```json fence. Handle the unclosed case too —
+  // a truncated response can drop the closing ``` and we still want a
+  // best-effort parse.
+  if (trimmed.startsWith('```')) {
+    const firstNewline = trimmed.indexOf('\n');
+    if (firstNewline !== -1) trimmed = trimmed.slice(firstNewline + 1).trim();
+    if (trimmed.endsWith('```')) trimmed = trimmed.slice(0, -3).trim();
+  }
 
   // If the text still doesn't start with `[`, pull out the first balanced
   // array-ish block. This is a best-effort extraction — we're not trying
@@ -186,6 +191,15 @@ export function parseClassifierResponse(text: string): RawClassification[] {
   return out;
 }
 
+/**
+ * Number of unknown commits sent per classifier AI call. Kept small
+ * enough that each batch's JSON response fits comfortably inside the
+ * default `maxOutputTokens` (2000) — at ~80 tokens per entry, 20 entries
+ * leaves headroom for rationales. A batch that fails only affects its
+ * own commits; the rest of the unknowns are classified normally.
+ */
+export const CLASSIFIER_BATCH_SIZE = 20;
+
 // --------- Main entry point ---------
 
 export async function classifyCommits(
@@ -239,27 +253,35 @@ async function mergeAiClassification(
   provider: AIProvider,
   opts: ClassifyOptions,
 ): Promise<ClassifiedCommit[]> {
-  let entries: RawClassification[];
-  let fallbackRationale: string | null = null;
-
-  try {
-    const result = await provider.generate({
-      system: CLASSIFIER_SYSTEM_PROMPT,
-      user: buildClassifierUserPrompt(unknowns),
-      maxTokens: opts.maxOutputTokens,
-      temperature: opts.temperature,
-    });
-    entries = parseClassifierResponse(result.text);
-  } catch (err) {
-    entries = [];
-    fallbackRationale = `AI classification failed (${
-      (err as Error).message || 'unknown error'
-    }); treated as patch`;
+  // Split unknowns into batches so a single oversized call doesn't blow
+  // past maxOutputTokens and truncate the JSON array. Each batch is its
+  // own independent call — a failure in one batch only affects that
+  // batch's commits.
+  const batches: ClassifiedCommit[][] = [];
+  for (let i = 0; i < unknowns.length; i += CLASSIFIER_BATCH_SIZE) {
+    batches.push(unknowns.slice(i, i + CLASSIFIER_BATCH_SIZE));
   }
 
-  // Index by shortSha for O(1) merge.
   const byShortSha = new Map<string, RawClassification>();
-  for (const e of entries) byShortSha.set(e.sha, e);
+  const perBatchFailureRationale = new Map<string, string>();
+
+  for (const batch of batches) {
+    try {
+      const result = await provider.generate({
+        system: CLASSIFIER_SYSTEM_PROMPT,
+        user: buildClassifierUserPrompt(batch),
+        maxTokens: opts.maxOutputTokens,
+        temperature: opts.temperature,
+      });
+      const entries = parseClassifierResponse(result.text);
+      for (const e of entries) byShortSha.set(e.sha, e);
+    } catch (err) {
+      const message = `AI classification failed (${
+        (err as Error).message || 'unknown error'
+      }); treated as patch`;
+      for (const c of batch) perBatchFailureRationale.set(c.shortSha, message);
+    }
+  }
 
   return initial.map((c) => {
     if (c.bump !== 'none') return c;
@@ -270,7 +292,7 @@ async function mergeAiClassification(
         bump: 'patch',
         source: 'ai',
         rationale:
-          fallbackRationale ??
+          perBatchFailureRationale.get(c.shortSha) ??
           'AI did not return a classification; treated as patch',
       };
     }

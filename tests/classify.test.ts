@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+  CLASSIFIER_BATCH_SIZE,
   CLASSIFIER_SYSTEM_PROMPT,
   buildClassifierUserPrompt,
   classifyCommits,
@@ -119,6 +120,16 @@ describe('parseClassifierResponse', () => {
     const entries = parseClassifierResponse(
       '```json\n[{"sha":"aa1","bump":"patch","rationale":"fix"}]\n```',
     );
+    expect(entries[0]!.bump).toBe('patch');
+  });
+
+  it('parses a ```json fence that was truncated before its closing fence', () => {
+    // Simulates output truncation: Claude opened a ```json fence but the
+    // response was cut off before the closing ``` landed.
+    const entries = parseClassifierResponse(
+      '```json\n[{"sha":"aa1","bump":"patch","rationale":"fix"}]',
+    );
+    expect(entries[0]!.sha).toBe('aa1');
     expect(entries[0]!.bump).toBe('patch');
   });
 
@@ -398,6 +409,84 @@ describe('classifyCommits — mixed mode', () => {
     });
     expect(seenMax).toBe(512);
     expect(seenTemp).toBe(0.1);
+  });
+
+  it('splits unknowns into batches when count exceeds the batch size', async () => {
+    const unknownCount = CLASSIFIER_BATCH_SIZE * 2 + 3; // 43 with size 20
+    const unknowns = Array.from({ length: unknownCount }, (_, i) =>
+      commit({
+        shortSha: `u${i.toString().padStart(2, '0')}`,
+        subject: `random thing ${i}`,
+      }),
+    );
+
+    const calls: number[] = [];
+    const provider = fakeProvider((user) => {
+      // Count the entries in the prompt to verify each call sees a batch,
+      // not the full set.
+      const matches = user.match(/^- u\d+:/gm);
+      calls.push(matches ? matches.length : 0);
+      // Respond with a valid classification for every commit in the batch.
+      const shas = user.match(/^- (u\d+):/gm)?.map((m) => m.slice(2, -1)) ?? [];
+      return JSON.stringify(
+        shas.map((sha) => ({ sha, bump: 'patch', rationale: 'x' })),
+      );
+    });
+
+    const result = await classifyCommits({
+      mode: 'mixed',
+      provider,
+      commits: unknowns,
+    });
+
+    const expectedCalls = Math.ceil(unknownCount / CLASSIFIER_BATCH_SIZE);
+    expect(calls).toHaveLength(expectedCalls);
+    // Each batch (except possibly the last) should equal CLASSIFIER_BATCH_SIZE.
+    for (const count of calls.slice(0, -1)) {
+      expect(count).toBe(CLASSIFIER_BATCH_SIZE);
+    }
+    // Last batch holds the remainder.
+    expect(calls.at(-1)).toBe(unknownCount % CLASSIFIER_BATCH_SIZE);
+    // All commits classified by AI.
+    expect(result.commits.every((c) => c.source === 'ai')).toBe(true);
+  });
+
+  it('isolates batch failures — a failing batch does not poison others', async () => {
+    const unknownCount = CLASSIFIER_BATCH_SIZE + 2; // 22 with size 20
+    const unknowns = Array.from({ length: unknownCount }, (_, i) =>
+      commit({
+        shortSha: `u${i.toString().padStart(2, '0')}`,
+        subject: `random thing ${i}`,
+      }),
+    );
+
+    let call = 0;
+    const provider = fakeProvider((user) => {
+      call += 1;
+      if (call === 1) return 'totally malformed not json';
+      const shas = user.match(/^- (u\d+):/gm)?.map((m) => m.slice(2, -1)) ?? [];
+      return JSON.stringify(
+        shas.map((sha) => ({ sha, bump: 'minor', rationale: 'real' })),
+      );
+    });
+
+    const result = await classifyCommits({
+      mode: 'mixed',
+      provider,
+      commits: unknowns,
+    });
+
+    // First CLASSIFIER_BATCH_SIZE commits fell into the failed batch → patch
+    // with a failure rationale.
+    for (let i = 0; i < CLASSIFIER_BATCH_SIZE; i++) {
+      expect(result.commits[i]!.bump).toBe('patch');
+      expect(result.commits[i]!.rationale!.toLowerCase()).toContain('fail');
+    }
+    // Remaining commits got their real classification from the second batch.
+    for (let i = CLASSIFIER_BATCH_SIZE; i < unknownCount; i++) {
+      expect(result.commits[i]!.bump).toBe('minor');
+      expect(result.commits[i]!.rationale).toBe('real');
+    }
   });
 
   it('preserves input order in the output', async () => {
