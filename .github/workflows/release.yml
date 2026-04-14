@@ -103,3 +103,57 @@ jobs:
               --generate-notes \
               "${FILES[@]}"
           fi
+
+  publish-npm:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for `npm publish --provenance` to mint a signed attestation.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.12
+
+      - name: Setup Node for npm publish
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}"
+            exit 1
+          fi
+
+      - name: Skip if version already on npm
+        id: check
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if npm view "releasewise@${PKG_VERSION}" version >/dev/null 2>&1; then
+            echo "releasewise@${PKG_VERSION} is already published — skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.check.outputs.skip != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Build dist
+        if: steps.check.outputs.skip != 'true'
+        run: bun run build
+
+      - name: Publish to npm
+        if: steps.check.outputs.skip != 'true'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
