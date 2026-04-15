@@ -61,7 +61,6 @@ function buildDeps(overrides?: Partial<RunReleaseDeps>): {
   const deps: RunReleaseDeps = {
     cwd: fx.dir,
     env: { ANTHROPIC_API_KEY: 'sk-fake-for-test' },
-    isTTY: false,
     stdout: (t: string) => {
       sinks.stdout += t;
     },
@@ -127,7 +126,7 @@ describe('E2E: release flow', () => {
     expect(sinks.stdout).toContain('v0.2.0');
   });
 
-  it('dry-run makes no changes', async () => {
+  it('default (no flags) previews and makes no changes', async () => {
     fx.writeFile('a.ts', 'export const a = 1;');
     await fx.commit('feat: add a');
 
@@ -143,10 +142,12 @@ describe('E2E: release flow', () => {
 
     const headBefore = await getHeadSha({ cwd: fx.dir });
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true }, deps);
+    // No --yes: must not mutate anything.
+    const result = await runRelease({}, deps);
 
     expect(result.exitCode).toBe(0);
     expect(sinks.stdout).toContain('Release plan');
+    expect(sinks.stdout).toContain('dry run');
 
     // HEAD hasn't changed — no commit was created.
     const headAfter = await getHeadSha({ cwd: fx.dir });

@@ -94,7 +94,8 @@ export async function runInit(deps: RunInitDeps = {}): Promise<RunInitResult> {
       `  Commit mode: mixed\n\n` +
       `Next steps:\n` +
       `  1. Set ANTHROPIC_API_KEY in your environment\n` +
-      `  2. Run \`releasewise release --dry-run\` to preview\n`,
+      `  2. Run \`releasewise release\` to preview (runs safely by default)\n` +
+      `  3. Re-run with \`--yes\` when you're ready to cut a real release\n`,
   );
 
   return { exitCode: 0 };

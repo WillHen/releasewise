@@ -19,8 +19,8 @@
  *      tags, and optionally pushes. Returns an `ExecuteReleaseResult`
  *      with everything the CLI needs to render the outcome.
  *
- * The split means `--dry-run` shares collection + planning with the
- * real release, and each layer is independently testable.
+ * The split means the default preview shares collection + planning
+ * with the real release (--yes), and each layer is independently testable.
  */
 import { readFile, writeFile as fsWriteFile } from 'node:fs/promises';
 import { join, relative } from 'node:path';
@@ -105,7 +105,7 @@ export interface CollectReleaseInputsOptions {
  *
  * Tries to keep all the "impure" work in one function so `planRelease`
  * can be tested against in-memory inputs. Any command that reads repo
- * state (`release --dry-run`, `estimate`, a future `inspect` command)
+ * state (`release` preview, `estimate`, a future `inspect` command)
  * will share this layer.
  */
 export async function collectReleaseInputs(

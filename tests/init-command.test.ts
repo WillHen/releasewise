@@ -144,6 +144,7 @@ describe('runInit', () => {
     await runInit({ cwd: tmpDir, ...sinks });
 
     expect(sinks.out).toContain('ANTHROPIC_API_KEY');
-    expect(sinks.out).toContain('--dry-run');
+    expect(sinks.out).toContain('releasewise release');
+    expect(sinks.out).toContain('--yes');
   });
 });

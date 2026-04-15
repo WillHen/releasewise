@@ -52,11 +52,11 @@ export ANTHROPIC_API_KEY=sk-ant-...
 # 2. Initialize config in your project
 releasewise init
 
-# 3. Preview what a release would look like
-releasewise release --dry-run
-
-# 4. Cut a real release
+# 3. Preview what a release would look like (safe by default)
 releasewise release
+
+# 4. Cut a real release — pushes a tag and creates a GitHub Release
+releasewise release --yes
 ```
 
 ## How it works
@@ -75,32 +75,36 @@ releasewise release
 
 The main command. Analyzes commits, bumps the version, generates notes, and ships.
 
+By default `releasewise release` is a **preview**: it runs the AI, renders the
+plan, and exits without touching your repo or remote. Pass `--yes` (alias
+`--force-release`, `-y`) to actually commit, tag, push, and create the GitHub
+Release. This is a safety-first default — misclassified bumps or bad notes
+should be caught before they ship.
+
 ```bash
-releasewise release              # auto-detect bump type
-releasewise release --bump major # force a major bump
-releasewise release --dry-run    # preview without making changes
-releasewise release --yes        # non-interactive (CI mode)
-releasewise release --json       # structured JSON output
-releasewise release --no-ai      # template fallback, no AI call
-releasewise release --pre beta   # pre-release: 1.0.0-beta.0
+releasewise release                   # preview only, no side effects
+releasewise release --yes             # execute: commit, tag, push, release
+releasewise release --bump major --yes # force a major bump and release
+releasewise release --json            # structured JSON preview
+releasewise release --no-ai           # template fallback, no AI call
+releasewise release --pre beta --yes  # pre-release: 1.0.0-beta.0
 ```
 
-| Flag                  | Description                                            |
-| --------------------- | ------------------------------------------------------ |
-| `--bump <type>`       | Force bump type: `major`, `minor`, or `patch`          |
-| `--mode <mode>`       | Commit analysis mode: `conventional` or `mixed`        |
-| `--pre <label>`       | Pre-release label (e.g. `beta`, `rc`)                  |
-| `--from <ref>`        | Base ref for commit range (default: last tag)          |
-| `--tone <tone>`       | Release notes tone: `formal`, `casual`, or `technical` |
-| `--yes` / `-y`        | Skip all prompts (auto-enabled when not a TTY)         |
-| `--no-push`           | Skip `git push` after tagging                          |
-| `--dry-run`           | Run AI + preview, but make no filesystem/git changes   |
-| `--estimate`          | Print token/cost estimate and exit                     |
-| `--json`              | Structured JSON output                                 |
-| `--no-ai`             | Skip AI, use template-based notes                      |
-| `--no-github-release` | Skip GitHub Release creation                           |
-| `--quiet`             | Suppress step logs and warnings                        |
-| `--verbose`           | Verbose logging with debug detail                      |
+| Flag                               | Description                                                 |
+| ---------------------------------- | ----------------------------------------------------------- |
+| `--bump <type>`                    | Force bump type: `major`, `minor`, or `patch`               |
+| `--mode <mode>`                    | Commit analysis mode: `conventional` or `mixed`             |
+| `--pre <label>`                    | Pre-release label (e.g. `beta`, `rc`)                       |
+| `--from <ref>`                     | Base ref for commit range (default: last tag)               |
+| `--tone <tone>`                    | Release notes tone: `formal`, `casual`, or `technical`      |
+| `--yes` / `-y` / `--force-release` | Execute the release. Without it, the command only previews. |
+| `--no-push`                        | Skip `git push` after tagging                               |
+| `--estimate`                       | Print token/cost estimate and exit                          |
+| `--json`                           | Structured JSON output                                      |
+| `--no-ai`                          | Skip AI, use template-based notes                           |
+| `--no-github-release`              | Skip GitHub Release creation                                |
+| `--quiet`                          | Suppress step logs and warnings                             |
+| `--verbose`                        | Verbose logging with debug detail                           |
 
 ### `releasewise init`
 
@@ -191,7 +195,11 @@ Never store API keys in the committed `.releasewise.json`.
 
 ## CI/CD
 
-releasewise works in non-interactive CI pipelines. When stdin is not a TTY, `--yes` is implied automatically.
+releasewise works in non-interactive CI pipelines. `--yes` is required to
+actually execute a release — CI that runs `releasewise release` without it
+will only print the preview, which is usually what you want for pull-request
+jobs. Reserve `--yes` for the pipeline step that is explicitly allowed to
+push tags.
 
 ```yaml
 # GitHub Actions example
@@ -199,7 +207,7 @@ releasewise works in non-interactive CI pipelines. When stdin is not a TTY, `--y
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: releasewise release --json
+  run: releasewise release --yes --json
 ```
 
 The `--json` flag outputs structured data for downstream pipeline steps:
@@ -222,7 +230,7 @@ The `--json` flag outputs structured data for downstream pipeline steps:
 
 ```bash
 bun install
-bun run dev -- release --dry-run   # run from source
+bun run dev -- release             # preview from source
 bun test                           # run tests
 bun run check                      # lint + format + typecheck + test
 bun run build:binary               # compile standalone binary

@@ -4,8 +4,9 @@
  * Two formats:
  *
  *   - `formatHumanPreview(plan)` — multi-section plaintext for
- *     `releasewise release --dry-run`. Deliberately ASCII-only and
- *     color-free so snapshot tests and CI logs stay stable.
+ *     the default `releasewise release` preview. Deliberately
+ *     ASCII-only and color-free so snapshot tests and CI logs
+ *     stay stable.
  *
  *   - `formatJsonPreview(plan)` — a JSON-serializable object for
  *     `--json`. This is the stable contract external tooling will
@@ -70,7 +71,7 @@ export interface JsonPreview {
 
 /**
  * Shape a `ReleasePlan` into the stable JSON-serializable contract
- * emitted by `release --dry-run --json`. Strips the `changelogBefore`
+ * emitted by `release --json` (preview mode). Strips the `changelogBefore`
  * (consumers can re-read the file) and the full truncated diff body
  * (only its metadata is useful downstream).
  *

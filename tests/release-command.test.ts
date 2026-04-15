@@ -114,7 +114,6 @@ interface BuildDepsOptions {
     opts: ExecuteReleaseOptions,
   ) => Promise<ExecuteReleaseResult>;
   env?: Record<string, string | undefined>;
-  isTTY?: boolean;
 }
 
 function buildDeps(opts: BuildDepsOptions = {}): {
@@ -135,7 +134,6 @@ function buildDeps(opts: BuildDepsOptions = {}): {
   const deps: RunReleaseDeps = {
     cwd: '/tmp/fake',
     env: opts.env ?? { ANTHROPIC_API_KEY: 'sk-test' },
-    isTTY: opts.isTTY ?? false,
     stdout: (t) => {
       sinks.stdout += t;
     },
@@ -198,28 +196,29 @@ function buildDeps(opts: BuildDepsOptions = {}): {
   return { deps, sinks, calls };
 }
 
-// --------- Dry-run vs execute ---------
+// --------- Preview (default) vs execute ---------
 
-describe('runRelease — dry-run vs execute', () => {
-  it('runs the preview path when --dry-run is set', async () => {
+describe('runRelease — preview by default, --yes to execute', () => {
+  it('previews and does NOT execute when called with no flags', async () => {
     const { deps, sinks, calls } = buildDeps();
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(0);
     expect(calls.executeRelease).toBe(0);
-    expect(sinks.stdout.length).toBeGreaterThan(0);
     expect(sinks.stdout).toContain('Release plan (dry run)');
   });
 
-  it('executes the release in non-TTY mode (implicit --yes)', async () => {
-    const { deps, sinks, calls } = buildDeps({ isTTY: false });
+  it('previews even when stdin is non-interactive (CI safety)', async () => {
+    // Previously a non-TTY implied --yes. After the flip, CI pipelines
+    // that run `releasewise release` without --yes must still preview.
+    const { deps, sinks, calls } = buildDeps();
     const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(0);
-    expect(calls.executeRelease).toBe(1);
-    expect(sinks.stdout).toContain('Released v1.3.0');
+    expect(calls.executeRelease).toBe(0);
+    expect(sinks.stdout).toContain('Release plan (dry run)');
   });
 
-  it('executes the release with explicit --yes in TTY mode', async () => {
-    const { deps, sinks, calls } = buildDeps({ isTTY: true });
+  it('executes the release only when --yes is set', async () => {
+    const { deps, sinks, calls } = buildDeps();
     const result = await runRelease({ yes: true }, deps);
     expect(result.exitCode).toBe(0);
     expect(calls.executeRelease).toBe(1);
@@ -227,20 +226,12 @@ describe('runRelease — dry-run vs execute', () => {
   });
 
   it('omits dry-run markers in the execute-mode preview', async () => {
-    const { deps, sinks } = buildDeps({ isTTY: false });
+    const { deps, sinks } = buildDeps();
     const result = await runRelease({ yes: true }, deps);
     expect(result.exitCode).toBe(0);
     expect(sinks.stdout).toContain('Release plan');
     expect(sinks.stdout).not.toContain('(dry run)');
     expect(sinks.stdout).not.toContain('This was a dry run');
-  });
-
-  it('refuses to execute in TTY mode without --yes', async () => {
-    const { deps, sinks, calls } = buildDeps({ isTTY: true });
-    const result = await runRelease({}, deps);
-    expect(result.exitCode).toBe(1);
-    expect(sinks.stderr).toContain('--yes');
-    expect(calls.executeRelease).toBe(0);
   });
 
   it('renders JSON output when executing with --json', async () => {
@@ -280,7 +271,7 @@ describe('runRelease — dry-run vs execute', () => {
 describe('runRelease — arg validation', () => {
   it('rejects invalid --bump with exit 1', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, bump: 'bogus' }, deps);
+    const result = await runRelease({ bump: 'bogus' }, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('--bump');
     expect(sinks.stderr).toContain('bogus');
@@ -293,13 +284,13 @@ describe('runRelease — arg validation', () => {
         return fakePlan({ bump: 'major', bumpForced: true });
       },
     });
-    const result = await runRelease({ dryRun: true, bump: 'MAJOR' }, deps);
+    const result = await runRelease({ bump: 'MAJOR' }, deps);
     expect(result.exitCode).toBe(0);
   });
 
   it('rejects --mode manual with a helpful message', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, mode: 'manual' }, deps);
+    const result = await runRelease({ mode: 'manual' }, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('manual');
     expect(sinks.stderr).toContain('--bump');
@@ -307,14 +298,14 @@ describe('runRelease — arg validation', () => {
 
   it('rejects invalid --mode', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, mode: 'random' }, deps);
+    const result = await runRelease({ mode: 'random' }, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('--mode');
   });
 
   it('rejects --pre with non-alphanumeric characters', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, pre: 'beta-1' }, deps);
+    const result = await runRelease({ pre: 'beta-1' }, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('--pre');
   });
@@ -326,7 +317,7 @@ describe('runRelease — arg validation', () => {
         return fakePlan();
       },
     });
-    const result = await runRelease({ dryRun: true, pre: 'beta' }, deps);
+    const result = await runRelease({ pre: 'beta' }, deps);
     expect(result.exitCode).toBe(0);
   });
 
@@ -349,7 +340,7 @@ describe('runRelease — arg validation', () => {
         };
       },
     });
-    const result = await runRelease({ dryRun: true, from: 'v1.0.0' }, deps);
+    const result = await runRelease({ from: 'v1.0.0' }, deps);
     expect(result.exitCode).toBe(0);
   });
 });
@@ -359,7 +350,7 @@ describe('runRelease — arg validation', () => {
 describe('runRelease — tone', () => {
   it('rejects invalid --tone', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, tone: 'silly' }, deps);
+    const result = await runRelease({ tone: 'silly' }, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('--tone');
   });
@@ -372,7 +363,7 @@ describe('runRelease — tone', () => {
         return fakePlan();
       },
     });
-    const result = await runRelease({ dryRun: true, tone: 'casual' }, deps);
+    const result = await runRelease({ tone: 'casual' }, deps);
     expect(result.exitCode).toBe(0);
     expect(capturedTone).toBe('casual');
   });
@@ -412,7 +403,7 @@ describe('runRelease — provider wiring', () => {
         return fakePlan();
       },
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(0);
     expect(calls.resolveApiKey).toBe(1);
     expect(calls.getProvider).toBe(1);
@@ -427,7 +418,7 @@ describe('runRelease — provider wiring', () => {
         return fakePlan();
       },
     });
-    const result = await runRelease({ dryRun: true, noAi: true }, deps);
+    const result = await runRelease({ noAi: true }, deps);
     expect(result.exitCode).toBe(0);
     expect(calls.resolveApiKey).toBe(0);
     expect(calls.getProvider).toBe(0);
@@ -440,7 +431,7 @@ describe('runRelease — provider wiring', () => {
         throw new Error('No API key for provider "anthropic".');
       },
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('No API key');
   });
@@ -455,7 +446,7 @@ describe('runRelease — config + warnings', () => {
         throw new Error('No .releasewise.json found');
       },
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('No .releasewise.json');
   });
@@ -465,7 +456,7 @@ describe('runRelease — config + warnings', () => {
       loadConfigImpl: () => fakeLoaded({ warnings: ['loader warning'] }),
       planReleaseImpl: async () => fakePlan({ warnings: ['plan warning'] }),
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(0);
     const loaderIdx = sinks.stdout.indexOf('loader warning');
     const planIdx = sinks.stdout.indexOf('plan warning');
@@ -480,7 +471,7 @@ describe('runRelease — config + warnings', () => {
 describe('runRelease — rendering', () => {
   it('renders human preview by default', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(0);
     expect(sinks.stdout).toContain('Release plan (dry run)');
     expect(sinks.stdout).toContain('1.2.2 -> 1.3.0');
@@ -489,7 +480,7 @@ describe('runRelease — rendering', () => {
 
   it('renders JSON preview when --json is set', async () => {
     const { deps, sinks } = buildDeps();
-    const result = await runRelease({ dryRun: true, json: true }, deps);
+    const result = await runRelease({ json: true }, deps);
     expect(result.exitCode).toBe(0);
     // Output should be parseable JSON.
     const parsed = JSON.parse(sinks.stdout.trim());
@@ -502,7 +493,7 @@ describe('runRelease — rendering', () => {
 
   it('trailing newline on human output', async () => {
     const { deps, sinks } = buildDeps();
-    await runRelease({ dryRun: true }, deps);
+    await runRelease({}, deps);
     expect(sinks.stdout.endsWith('\n')).toBe(true);
   });
 });
@@ -518,7 +509,7 @@ describe('runRelease — error handling', () => {
         );
       },
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('nothing to release');
   });
@@ -529,7 +520,7 @@ describe('runRelease — error handling', () => {
         throw 'string thrown';
       },
     });
-    const result = await runRelease({ dryRun: true }, deps);
+    const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('string thrown');
   });

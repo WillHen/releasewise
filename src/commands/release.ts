@@ -14,11 +14,13 @@
  *
  * Two modes:
  *
- *   - `--dry-run`: plan the release, render a preview, exit without
- *     writing anything.
+ *   - Default (no flags): plan the release, render a preview, exit
+ *     without writing anything. Safe by default — no tag push, no
+ *     GitHub Release, no mutations.
  *
- *   - Normal: plan the release, render a preview, then execute it
- *     (bump package.json, write CHANGELOG.md, commit, tag, push).
+ *   - `--yes` (alias `--force-release`, `-y`): plan, render a preview,
+ *     then execute (bump package.json, write CHANGELOG.md, commit,
+ *     tag, push, create GitHub Release).
  *
  * All writes go through the injected `stdout` / `stderr` so tests can
  * capture them as strings. All errors are caught and rendered with
@@ -58,11 +60,15 @@ export interface RunReleaseArgs {
   pre?: string;
   from?: string;
   tone?: string;
-  dryRun?: boolean;
   estimate?: boolean;
   noPush?: boolean;
   noGithubRelease?: boolean;
   json?: boolean;
+  /**
+   * Opt in to the destructive path: commit, tag, push, and create the
+   * GitHub Release. Without this flag the command only renders a
+   * preview. `--force-release` is a long alias for the same thing.
+   */
   yes?: boolean;
   noAi?: boolean;
 }
@@ -70,8 +76,6 @@ export interface RunReleaseArgs {
 export interface RunReleaseDeps {
   cwd?: string;
   env?: Record<string, string | undefined>;
-  /** True if stdin is a TTY. Defaults to process.stdin.isTTY. */
-  isTTY?: boolean;
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
   loadConfig?: (opts: { cwd?: string }) => LoadedConfig;
@@ -106,7 +110,6 @@ export async function runRelease(
   const stderr = deps.stderr ?? ((t: string) => process.stderr.write(t));
   const env = deps.env ?? process.env;
   const cwd = deps.cwd ?? process.cwd();
-  const isTTY = deps.isTTY ?? Boolean(process.stdin.isTTY);
   const loadConfig = deps.loadConfig ?? realLoadConfig;
   const resolveApiKey = deps.resolveApiKey ?? realResolveApiKey;
   const getProvider = deps.getProvider ?? realGetProvider;
@@ -116,8 +119,11 @@ export async function runRelease(
   const executeRelease = deps.executeRelease ?? realExecuteRelease;
 
   try {
-    // 1. Resolve the effective --yes: explicit flag > TTY auto-detect.
-    const autoConfirm = args.yes ?? !isTTY;
+    // 1. Preview unless the caller explicitly opts in.
+    //    The tool pushes tags, commits, and creates GitHub Releases —
+    //    accidentally running one of those with a misclassified commit
+    //    is expensive to undo, so the default is a read-only preview.
+    const execute = args.yes === true;
 
     // 2. Validate string args before touching config or git.
     const forceBump = parseBumpArg(args.bump);
@@ -187,8 +193,8 @@ export async function runRelease(
       warnings: [...loaded.warnings, ...plan.warnings],
     };
 
-    // 8. Dry-run: render preview and exit.
-    if (args.dryRun) {
+    // 8. Default path: render preview and exit without touching anything.
+    if (!execute) {
       if (args.json) {
         stdout(`${JSON.stringify(formatJsonPreview(merged), null, 2)}\n`);
       } else {
@@ -197,23 +203,12 @@ export async function runRelease(
       return { exitCode: 0 };
     }
 
-    // 9. Real release: require --yes or TTY auto-confirm.
-    //    (Interactive prompting is deferred — for now, non-TTY implies
-    //    --yes and interactive TTY without --yes is an error.)
-    if (!autoConfirm) {
-      stderr(
-        'Error: interactive confirmation is not yet implemented.\n' +
-          'Pass --yes (or -y) to proceed, or use --dry-run to preview first.\n',
-      );
-      return { exitCode: 1 };
-    }
-
-    // 10. Show the plan before executing so the user sees what's happening.
+    // 9. Show the plan before executing so the user sees what's happening.
     if (!args.json) {
       stdout(`${formatHumanPreview(merged, { dryRun: false })}\n\n`);
     }
 
-    // 11. Execute.
+    // 10. Execute.
     const result = await executeRelease({
       plan: merged,
       config: loaded.config,
@@ -223,7 +218,7 @@ export async function runRelease(
       env,
     });
 
-    // 12. Render outcome.
+    // 11. Render outcome.
     if (args.json) {
       stdout(
         `${JSON.stringify(
@@ -340,7 +335,9 @@ function parseToneArg(
 export const releaseCommand = defineCommand({
   meta: {
     name: 'release',
-    description: 'Analyze commits, bump version, write notes, tag and push.',
+    description:
+      'Analyze commits, bump version, write notes, tag and push. ' +
+      'Previews by default; pass --yes to actually release.',
   },
   args: {
     bump: {
@@ -365,18 +362,15 @@ export const releaseCommand = defineCommand({
     },
     yes: {
       type: 'boolean',
-      alias: 'y',
-      description: 'Skip all prompts',
+      alias: ['y', 'force-release'],
+      description:
+        'Execute the release (commit, tag, push, create GitHub Release). ' +
+        'Without this flag the command only previews.',
       default: false,
     },
     'no-push': {
       type: 'boolean',
       description: 'Do not run git push after tagging',
-      default: false,
-    },
-    'dry-run': {
-      type: 'boolean',
-      description: 'Run AI + preview but make no changes',
       default: false,
     },
     estimate: {
@@ -424,7 +418,6 @@ export const releaseCommand = defineCommand({
       pre: args.pre as string | undefined,
       from: args.from as string | undefined,
       tone: args.tone as string | undefined,
-      dryRun: Boolean(args['dry-run']),
       estimate: Boolean(args.estimate),
       noPush: Boolean(args['no-push']),
       noGithubRelease: Boolean(args['no-github-release']),
