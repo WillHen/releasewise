@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-15
+
+### Changed
+
+- `releasewise release` now previews by default — it runs the AI, renders the plan, and exits without touching your repo or remote; pass `--yes` (alias `--force-release`, `-y`) to actually commit, tag, push, and create the GitHub Release
+- `--dry-run` flag is removed; the default command behavior replaces it
+- CI pipelines that relied on non-TTY auto-confirm must now pass `--yes` explicitly to execute a release
+
+### Fixed
+
+- Auto-detected `major` bumps on pre-1.0 (`0.x.y`) projects are silently downgraded to `minor` to prevent accidentally shipping `1.0.0`; a warning is surfaced pointing at `--bump major` as the graduation escape hatch
+- Classifier no longer silently falls back to `patch` on AI batch failure — it retries once with backoff and then throws an error carrying the unclassified SHAs, so a breaking change can no longer be hidden as a patch release
+
 ## [0.2.1] - 2026-04-14
 
 ### Fixed
