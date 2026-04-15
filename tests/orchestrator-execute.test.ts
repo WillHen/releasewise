@@ -3,7 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { executeRelease, type ReleasePlan } from '../src/core/orchestrator.ts';
+import {
+  collectReleaseInputs,
+  executeRelease,
+  planRelease,
+  type ReleasePlan,
+} from '../src/core/orchestrator.ts';
 import { defaultConfig, type Config } from '../src/core/config.ts';
 import { getHeadSha, getLastTag, isClean } from '../src/core/git.ts';
 import { readTransactionLog } from '../src/core/rollback.ts';
@@ -293,5 +298,162 @@ describe('executeRelease', () => {
     const log = await readTransactionLog(fx.dir);
     expect(log).not.toBeNull();
     expect(log!.pushed).toBe(true);
+  });
+});
+
+// --------- Prerelease graduation E2E ---------
+
+/**
+ * Walk a fixture repo through the full prerelease graduation cycle:
+ *   0.1.0  --bump major --pre alpha  → 1.0.0-alpha.0
+ *   alpha  --bump patch --pre beta   → 1.0.0-beta.0   (label switch)
+ *   beta   (no --pre)                → 1.0.0          (graduation)
+ *
+ * Drives the real `collectReleaseInputs → planRelease → executeRelease`
+ * pipeline with a null provider (template notes) so no AI is involved.
+ * Asserts package.json, CHANGELOG, and the annotated tag for each step.
+ */
+describe('executeRelease — prerelease graduation alpha.0 → beta.0 → 1.0.0', () => {
+  it('cycles through alpha, beta, and graduates to the stable version', async () => {
+    seedPackageJson('0.1.0');
+    await fx.commit('chore: init');
+
+    const cfg = config();
+    // Keep the test hermetic: never push, never hit GitHub.
+    cfg.release.pushOnRelease = false;
+    cfg.release.createGithubRelease = false;
+
+    // --- Step 1: 0.1.0 → 1.0.0-alpha.0 ---
+    fx.writeFile('src/a.ts', 'export const a = 1;\n');
+    await fx.commit('feat!: overhaul public API');
+
+    const step1Inputs = await collectReleaseInputs({
+      cwd: fx.dir,
+      config: cfg,
+    });
+    expect(step1Inputs.currentVersion).toBe('0.1.0');
+    expect(step1Inputs.previousVersion).toBeNull();
+
+    const step1Plan = await planRelease({
+      inputs: step1Inputs,
+      config: cfg,
+      provider: null,
+      forceBump: 'major',
+      prerelease: 'alpha',
+      date: '2026-04-14',
+    });
+    expect(step1Plan.nextVersion).toBe('1.0.0-alpha.0');
+
+    const step1Result = await executeRelease({
+      plan: step1Plan,
+      config: cfg,
+      cwd: fx.dir,
+      noPush: true,
+    });
+
+    expect(step1Result.version).toBe('1.0.0-alpha.0');
+    expect(step1Result.tagName).toBe('v1.0.0-alpha.0');
+    expect(await getLastTag({ cwd: fx.dir })).toBe('v1.0.0-alpha.0');
+    expect(
+      JSON.parse(readFileSync(join(fx.dir, 'package.json'), 'utf8')).version,
+    ).toBe('1.0.0-alpha.0');
+    let changelog = readFileSync(join(fx.dir, 'CHANGELOG.md'), 'utf8');
+    expect(changelog).toContain('## [1.0.0-alpha.0]');
+    expect(await isClean({ cwd: fx.dir })).toBe(true);
+
+    // --- Step 2: 1.0.0-alpha.0 → 1.0.0-beta.0 (label switch) ---
+    fx.writeFile('src/b.ts', 'export const b = 2;\n');
+    await fx.commit('fix: stabilize alpha behavior');
+
+    const step2Inputs = await collectReleaseInputs({
+      cwd: fx.dir,
+      config: cfg,
+    });
+    expect(step2Inputs.currentVersion).toBe('1.0.0-alpha.0');
+    expect(step2Inputs.previousVersion).toBe('1.0.0-alpha.0');
+
+    const step2Plan = await planRelease({
+      inputs: step2Inputs,
+      config: cfg,
+      provider: null,
+      forceBump: 'patch',
+      prerelease: 'beta',
+      date: '2026-04-14',
+    });
+    expect(step2Plan.nextVersion).toBe('1.0.0-beta.0');
+
+    const step2Result = await executeRelease({
+      plan: step2Plan,
+      config: cfg,
+      cwd: fx.dir,
+      noPush: true,
+    });
+
+    expect(step2Result.version).toBe('1.0.0-beta.0');
+    expect(step2Result.tagName).toBe('v1.0.0-beta.0');
+    expect(await getLastTag({ cwd: fx.dir })).toBe('v1.0.0-beta.0');
+    expect(
+      JSON.parse(readFileSync(join(fx.dir, 'package.json'), 'utf8')).version,
+    ).toBe('1.0.0-beta.0');
+    changelog = readFileSync(join(fx.dir, 'CHANGELOG.md'), 'utf8');
+    // Both the alpha and beta entries must be present (newest first).
+    expect(changelog).toContain('## [1.0.0-beta.0]');
+    expect(changelog).toContain('## [1.0.0-alpha.0]');
+    expect(changelog.indexOf('[1.0.0-beta.0]')).toBeLessThan(
+      changelog.indexOf('[1.0.0-alpha.0]'),
+    );
+    expect(await isClean({ cwd: fx.dir })).toBe(true);
+
+    // --- Step 3: 1.0.0-beta.0 → 1.0.0 (graduation) ---
+    fx.writeFile('src/c.ts', 'export const c = 3;\n');
+    await fx.commit('fix: polish beta before GA');
+
+    const step3Inputs = await collectReleaseInputs({
+      cwd: fx.dir,
+      config: cfg,
+    });
+    expect(step3Inputs.currentVersion).toBe('1.0.0-beta.0');
+    expect(step3Inputs.previousVersion).toBe('1.0.0-beta.0');
+
+    const step3Plan = await planRelease({
+      inputs: step3Inputs,
+      config: cfg,
+      provider: null,
+      forceBump: 'patch',
+      // No prerelease here — patch + prior prerelease → graduation.
+      date: '2026-04-14',
+    });
+    expect(step3Plan.nextVersion).toBe('1.0.0');
+
+    const step3Result = await executeRelease({
+      plan: step3Plan,
+      config: cfg,
+      cwd: fx.dir,
+      noPush: true,
+    });
+
+    expect(step3Result.version).toBe('1.0.0');
+    expect(step3Result.tagName).toBe('v1.0.0');
+    expect(await getLastTag({ cwd: fx.dir })).toBe('v1.0.0');
+    expect(
+      JSON.parse(readFileSync(join(fx.dir, 'package.json'), 'utf8')).version,
+    ).toBe('1.0.0');
+    changelog = readFileSync(join(fx.dir, 'CHANGELOG.md'), 'utf8');
+    expect(changelog).toContain('## [1.0.0] - 2026-04-14');
+    // All three headings are present and in the right order (newest first).
+    const gaIdx = changelog.indexOf('## [1.0.0]');
+    const betaIdx = changelog.indexOf('## [1.0.0-beta.0]');
+    const alphaIdx = changelog.indexOf('## [1.0.0-alpha.0]');
+    expect(gaIdx).toBeGreaterThanOrEqual(0);
+    expect(betaIdx).toBeGreaterThan(gaIdx);
+    expect(alphaIdx).toBeGreaterThan(betaIdx);
+    expect(await isClean({ cwd: fx.dir })).toBe(true);
+
+    // Transaction log reflects the final graduation.
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.fromVersion).toBe('1.0.0-beta.0');
+    expect(log!.toVersion).toBe('1.0.0');
+    expect(log!.tagName).toBe('v1.0.0');
   });
 });
