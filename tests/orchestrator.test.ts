@@ -6,6 +6,7 @@ import { defaultConfig, type Config } from '../src/core/config.ts';
 import {
   collectReleaseInputs,
   planRelease,
+  PRE_1_MAJOR_DOWNGRADE_WARNING,
   type ReleaseInputs,
 } from '../src/core/orchestrator.ts';
 import type { AIProvider, Commit, RemoteInfo } from '../src/types.ts';
@@ -205,6 +206,85 @@ describe('planRelease — bump resolution', () => {
     });
     expect(plan.bump).toBe('major');
     expect(plan.nextVersion).toBe('2.0.0');
+  });
+});
+
+// --------- planRelease: pre-1.0 bump policy ---------
+
+describe('planRelease — pre-1.0 bump policy', () => {
+  it('downgrades auto-detected major → minor when base is pre-1.0', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        currentVersion: '0.2.1',
+        previousVersion: '0.2.1',
+        baseRef: 'v0.2.1',
+        commits: [
+          commit({ shortSha: 'aa', subject: 'feat(api)!: drop v1 route' }),
+          commit({ shortSha: 'bb', subject: 'feat!: rewrite core' }),
+        ],
+      }),
+      config: configWith(),
+      provider: null,
+      date: '2026-04-11',
+    });
+    expect(plan.bump).toBe('minor');
+    expect(plan.bumpForced).toBe(false);
+    expect(plan.nextVersion).toBe('0.3.0');
+    expect(plan.warnings).toContain(PRE_1_MAJOR_DOWNGRADE_WARNING);
+  });
+
+  it('keeps auto-detected major when base is >= 1.0.0', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        currentVersion: '1.2.2',
+        commits: [
+          commit({ shortSha: 'aa', subject: 'feat(api)!: drop v1 route' }),
+        ],
+      }),
+      config: configWith(),
+      provider: null,
+      date: '2026-04-11',
+    });
+    expect(plan.bump).toBe('major');
+    expect(plan.bumpForced).toBe(false);
+    expect(plan.nextVersion).toBe('2.0.0');
+    expect(plan.warnings).not.toContain(PRE_1_MAJOR_DOWNGRADE_WARNING);
+  });
+
+  it('honors explicit --bump major on a pre-1.0 base (graduation)', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        currentVersion: '0.2.1',
+        previousVersion: '0.2.1',
+        baseRef: 'v0.2.1',
+        commits: [
+          commit({ shortSha: 'aa', subject: 'feat(api)!: drop v1 route' }),
+        ],
+      }),
+      config: configWith(),
+      provider: null,
+      forceBump: 'major',
+      date: '2026-04-11',
+    });
+    expect(plan.bump).toBe('major');
+    expect(plan.bumpForced).toBe(true);
+    expect(plan.nextVersion).toBe('1.0.0');
+    expect(plan.warnings).not.toContain(PRE_1_MAJOR_DOWNGRADE_WARNING);
+  });
+
+  it('does not interfere with minor/patch auto-bumps on pre-1.0 bases', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        currentVersion: '0.2.1',
+        commits: [commit({ shortSha: 'aa', subject: 'feat: add thing' })],
+      }),
+      config: configWith(),
+      provider: null,
+      date: '2026-04-11',
+    });
+    expect(plan.bump).toBe('minor');
+    expect(plan.nextVersion).toBe('0.3.0');
+    expect(plan.warnings).not.toContain(PRE_1_MAJOR_DOWNGRADE_WARNING);
   });
 });
 

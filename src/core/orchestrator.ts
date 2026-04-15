@@ -60,9 +60,19 @@ import { generateReleaseNotes } from './release-notes.ts';
 import { writeTransactionLog } from './rollback.ts';
 import {
   bumpVersionString,
+  isPre1,
   resolveCurrentVersion,
   writePackageVersion,
 } from './version.ts';
+
+/**
+ * Warning emitted when the auto-detected bump would be `major` but the
+ * base version is still pre-1.0 — we downgrade to `minor` to match the
+ * ecosystem convention (semantic-release, release-please, changesets).
+ */
+export const PRE_1_MAJOR_DOWNGRADE_WARNING =
+  'Pre-1.0 project: breaking changes bumped to minor instead of major. ' +
+  'Use `--bump major` to graduate to 1.0.0.';
 
 // --------- collectReleaseInputs ---------
 
@@ -248,6 +258,7 @@ export async function planRelease(
   const { bump, bumpForced } = resolveBump(
     opts.forceBump,
     classification.bump,
+    inputs.currentVersion,
     warnings,
   );
 
@@ -322,6 +333,7 @@ function resolveMode(
 function resolveBump(
   forceBump: BumpType | undefined,
   classifierBump: BumpType,
+  currentVersion: string,
   warnings: string[],
 ): { bump: BumpType; bumpForced: boolean } {
   if (forceBump) {
@@ -333,6 +345,10 @@ function resolveBump(
         'Use --bump to override.',
     );
     return { bump: 'patch', bumpForced: false };
+  }
+  if (classifierBump === 'major' && isPre1(currentVersion)) {
+    warnings.push(PRE_1_MAJOR_DOWNGRADE_WARNING);
+    return { bump: 'minor', bumpForced: false };
   }
   return { bump: classifierBump, bumpForced: false };
 }

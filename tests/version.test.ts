@@ -8,6 +8,7 @@ import {
   bumpVersion,
   bumpVersionString,
   formatVersion,
+  isPre1,
   parseVersion,
   readPackageVersion,
   resolveCurrentVersion,
@@ -228,6 +229,30 @@ describe('bumpVersion — pure data API', () => {
     expect(
       bumpVersion({ major: 1, minor: 0, patch: 0, prerelease: null }, 'minor'),
     ).toEqual({ major: 1, minor: 1, patch: 0, prerelease: null });
+  });
+});
+
+// --------- isPre1 ---------
+
+describe('isPre1', () => {
+  it('returns true for 0.x.y', () => {
+    expect(isPre1('0.1.0')).toBe(true);
+    expect(isPre1('0.2.1')).toBe(true);
+    expect(isPre1('0.99.99')).toBe(true);
+  });
+
+  it('returns false for 1.x.y and above', () => {
+    expect(isPre1('1.0.0')).toBe(false);
+    expect(isPre1('2.3.4')).toBe(false);
+  });
+
+  it('ignores the prerelease suffix', () => {
+    expect(isPre1('0.1.0-beta.0')).toBe(true);
+    expect(isPre1('1.0.0-rc.1')).toBe(false);
+  });
+
+  it('throws on invalid input', () => {
+    expect(() => isPre1('not-semver')).toThrow(/Invalid version/);
   });
 });
 

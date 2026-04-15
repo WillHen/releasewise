@@ -188,6 +188,16 @@ export function bumpVersionString(
   return formatVersion(bumpVersion(parseVersion(current), bump, pre));
 }
 
+/**
+ * True when `version` is a pre-1.0 release (major === 0). The ecosystem
+ * convention (semantic-release, release-please, changesets) is that
+ * breaking changes pre-1.0 bump the minor, not the major, so projects
+ * don't accidentally graduate to 1.0.0 before they're ready.
+ */
+export function isPre1(version: string): boolean {
+  return parseVersion(version).major === 0;
+}
+
 // --------- package.json I/O ---------
 
 const PACKAGE_JSON = 'package.json';
