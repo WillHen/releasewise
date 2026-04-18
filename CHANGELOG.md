@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-04-18
+
+### Fixed
+
+- First release now tags the version already in `package.json` (e.g. `0.1.0`) instead of applying an extra bump on top of it (e.g. `0.2.0`); `--bump` can still override this behavior when forced
+
 ## [0.3.2] - 2026-04-18
 
 ### Fixed
