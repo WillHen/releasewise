@@ -390,12 +390,14 @@ export const releaseCommand = defineCommand({
     },
     ai: {
       type: 'boolean',
-      description: 'Use AI for classification and notes (--no-ai for template fallback)',
+      description:
+        'Use AI for classification and notes (--no-ai for template fallback)',
       default: true,
     },
     'github-release': {
       type: 'boolean',
-      description: 'Create a GitHub Release after pushing (--no-github-release to skip)',
+      description:
+        'Create a GitHub Release after pushing (--no-github-release to skip)',
       default: true,
     },
     credits: {
