@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-04-18
+
+### Fixed
+
+- `releasewise --version` reported the version baked in at build time rather than the installed version; the CLI now reads `package.json` at runtime so the correct version is always shown
+
 ## [0.3.1] - 2026-04-18
 
 ### Fixed

@@ -1,6 +1,6 @@
 {
   "name": "releasewise",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "AI-powered CLI that turns a git diff into a high-quality release — semver bump, changelog, tag, push, and GitHub Release in one command.",
   "type": "module",
   "bin": {
