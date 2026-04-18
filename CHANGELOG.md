@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-04-18
+
+### Fixed
+
+- On a repo with no prior tag, the root commit was silently excluded from the commit list and diff, causing single-commit repos to throw "No commits in range" and multi-commit first releases to classify and generate changelogs without the root commit's contents
+- GitHub tokens echoed by `gh` from the user's keychain, truncated token copies, and fine-grained PATs (`github_pat_`) were not redacted from error output when a release failed
+
 ## [0.3.0] - 2026-04-15
 
 ### Changed
