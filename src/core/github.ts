@@ -26,6 +26,12 @@ const GithubReleaseResponseSchema = z.object({
   html_url: z.string().url(),
 });
 
+// Matches any GitHub-issued token: classic PATs (ghp_), OAuth (gho_),
+// user-to-server (ghu_), server-to-server (ghs_), refresh (ghr_), and
+// fine-grained PATs (github_pat_). Anchored with \b to avoid chewing
+// the middle of unrelated identifiers.
+const GITHUB_TOKEN_PATTERN = /\b(?:gh[opusr]|github_pat)_[A-Za-z0-9_]{8,}/g;
+
 // --------- Public types ---------
 
 export interface CreateGithubReleaseOptions {
@@ -152,7 +158,20 @@ export async function createGithubRelease(
  */
 function summarizeError(err: unknown, token: string | undefined): string {
   const raw = err instanceof Error ? err.message : String(err);
-  const redacted = token ? raw.split(token).join('***') : raw;
+
+  // Redact any GitHub-shaped token, even ones we didn't originate —
+  // `gh` CLI often echoes tokens from the user's keychain.
+  let redacted = raw.replace(GITHUB_TOKEN_PATTERN, '***');
+
+  // Belt-and-braces: if we know the exact token, redact anything starting
+  // with its first 8 chars so truncated or transformed copies can't slip
+  // past the pattern above.
+  if (token && token.length >= 12) {
+    const prefix = token.slice(0, 8);
+    const escaped = prefix.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    redacted = redacted.replace(new RegExp(`${escaped}\\S*`, 'g'), '***');
+  }
+
   const collapsed = redacted.replace(/\s+/g, ' ').trim();
   const MAX = 500;
   return collapsed.length > MAX ? `${collapsed.slice(0, MAX)}…` : collapsed;

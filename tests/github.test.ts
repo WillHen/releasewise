@@ -227,6 +227,62 @@ describe('createGithubRelease — skipped', () => {
     }
   });
 
+  it('redacts a GitHub-shaped token that the caller did not supply', async () => {
+    const leakedToken = 'ghp_AAAABBBBCCCCDDDDEEEEFFFF11112222';
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => false,
+      apiCreateRelease: async () => {
+        throw new Error(`upstream rejected token ${leakedToken}`);
+      },
+    };
+    // The env token is a different value; the leaked one only appears in
+    // the error body, so split-based redaction would miss it.
+    const opts = baseOpts({ env: { GITHUB_TOKEN: 'ghs_some_other_value' } });
+    const result = await createGithubRelease(opts, deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.error).not.toContain(leakedToken);
+      expect(result.error).toContain('***');
+    }
+  });
+
+  it('redacts a truncated copy of the known token', async () => {
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => false,
+      apiCreateRelease: async () => {
+        // Upstream logs only the first 9 chars of the token + ellipsis,
+        // so the full-string split would never match.
+        throw new Error('401: Bad token ghp_super… rejected');
+      },
+    };
+    const opts = baseOpts({
+      env: { GITHUB_TOKEN: 'ghp_supersecretvalue12345' },
+    });
+    const result = await createGithubRelease(opts, deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.error).not.toContain('ghp_super');
+      expect(result.error).toContain('***');
+    }
+  });
+
+  it('redacts fine-grained PATs by pattern when gh fails', async () => {
+    const leakedPat = 'github_pat_11ABCDE12345_longtailblahblahblah';
+    const deps: GithubReleaseDeps = {
+      isGhAvailable: async () => true,
+      ghCreateRelease: async () => {
+        throw new Error(`gh auth error: ${leakedPat} is expired`);
+      },
+    };
+    // No env token — we're exercising pattern-based redaction alone.
+    const result = await createGithubRelease(baseOpts({ env: {} }), deps);
+    expect(result.status).toBe('failed');
+    if (result.status === 'failed') {
+      expect(result.error).not.toContain('github_pat_11ABCDE');
+      expect(result.error).toContain('***');
+    }
+  });
+
   it('treats a malformed API response shape as a failed release', async () => {
     // Drive the real `defaultApiCreateRelease` path by NOT injecting
     // apiCreateRelease, then mock global fetch to return a response the
