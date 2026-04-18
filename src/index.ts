@@ -12,12 +12,12 @@ import { undoCommand } from './commands/undo.ts';
 import { estimateCommand } from './commands/estimate.ts';
 import { doctorCommand } from './commands/doctor.ts';
 
-import pkg from '../package.json' with { type: 'json' };
+import { resolveVersion } from './cli-meta.ts';
 
 const main = defineCommand({
   meta: {
     name: 'releasewise',
-    version: pkg.version,
+    version: resolveVersion(),
     description:
       'AI-powered CLI that turns a git diff into a high-quality release.',
   },
