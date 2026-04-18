@@ -275,6 +275,7 @@ export async function planRelease(
     opts.forceBump,
     classification.bump,
     inputs.currentVersion,
+    inputs.firstRelease,
     warnings,
   );
 
@@ -350,10 +351,19 @@ function resolveBump(
   forceBump: BumpType | undefined,
   classifierBump: BumpType,
   currentVersion: string,
+  firstRelease: boolean,
   warnings: string[],
 ): { bump: BumpType; bumpForced: boolean } {
   if (forceBump) {
     return { bump: forceBump, bumpForced: true };
+  }
+  // On a first release, the version already in package.json IS the first
+  // release — don't bump on top of it. (resolveCurrentVersion returns
+  // 0.1.0 when the field is missing/0.0.0, so "first release" lands on
+  // 0.1.0 by default, not 0.2.0.) A `--pre` flag still tags it as a
+  // prerelease via bumpVersionString(v, 'none', pre) → v-pre.0.
+  if (firstRelease) {
+    return { bump: 'none', bumpForced: false };
   }
   if (classifierBump === 'none') {
     warnings.push(

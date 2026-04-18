@@ -99,17 +99,18 @@ describe('E2E: release flow', () => {
 
     expect(result.exitCode).toBe(0);
 
-    // Version bumped to 0.2.0 (minor, from feat commit).
+    // First release lands on the version already in package.json (0.1.0)
+    // — we don't bump on top of the starting version.
     const pkg = JSON.parse(readFileSync(join(fx.dir, 'package.json'), 'utf8'));
-    expect(pkg.version).toBe('0.2.0');
+    expect(pkg.version).toBe('0.1.0');
 
     // Tag created.
     const tag = await getLastTag({ cwd: fx.dir });
-    expect(tag).toBe('v0.2.0');
+    expect(tag).toBe('v0.1.0');
 
     // CHANGELOG written with AI-generated content.
     const changelog = readFileSync(join(fx.dir, 'CHANGELOG.md'), 'utf8');
-    expect(changelog).toContain('## [0.2.0]');
+    expect(changelog).toContain('## [0.1.0]');
     expect(changelog).toContain('### Added');
     expect(changelog).toContain('New feature for users');
 
@@ -119,11 +120,11 @@ describe('E2E: release flow', () => {
     // Transaction log written.
     const log = await readTransactionLog(fx.dir);
     expect(log).not.toBeNull();
-    expect(log!.toVersion).toBe('0.2.0');
+    expect(log!.toVersion).toBe('0.1.0');
     expect(log!.pushed).toBe(false);
 
     // Output mentions the release.
-    expect(sinks.stdout).toContain('v0.2.0');
+    expect(sinks.stdout).toContain('v0.1.0');
   });
 
   it('default (no flags) previews and makes no changes', async () => {
@@ -178,7 +179,7 @@ describe('E2E: release flow', () => {
     expect(result.exitCode).toBe(0);
     const parsed = JSON.parse(sinks.stdout);
     expect(parsed.executed).toBe(true);
-    expect(parsed.tagName).toBe('v0.2.0');
+    expect(parsed.tagName).toBe('v0.1.0');
     expect(parsed.commitSha).toBeDefined();
   });
 
@@ -226,6 +227,6 @@ describe('E2E: release flow', () => {
     expect(result.exitCode).toBe(0);
     // Template fallback produces changelog with commit subjects.
     const changelog = readFileSync(join(fx.dir, 'CHANGELOG.md'), 'utf8');
-    expect(changelog).toContain('## [0.2.0]');
+    expect(changelog).toContain('## [0.1.0]');
   });
 });

@@ -397,7 +397,7 @@ describe('planRelease — empty commit range', () => {
 // --------- planRelease: first release ---------
 
 describe('planRelease — first release', () => {
-  it('carries firstRelease + previousVersion: null through', async () => {
+  it('uses the current version as-is instead of bumping on top of it', async () => {
     const plan = await planRelease({
       inputs: inputs({
         firstRelease: true,
@@ -412,7 +412,44 @@ describe('planRelease — first release', () => {
     expect(plan.firstRelease).toBe(true);
     expect(plan.previousVersion).toBeNull();
     expect(plan.currentVersion).toBe('0.1.0');
-    expect(plan.nextVersion).toBe('0.2.0');
+    expect(plan.nextVersion).toBe('0.1.0');
+    expect(plan.bump).toBe('none');
+    expect(plan.bumpForced).toBe(false);
+  });
+
+  it('applies --pre to the first release without bumping the base', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        firstRelease: true,
+        previousVersion: null,
+        currentVersion: '0.1.0',
+        commits: [commit({ shortSha: 'aa', subject: 'feat: initial' })],
+      }),
+      config: configWith(),
+      provider: null,
+      prerelease: 'alpha',
+      date: '2026-04-11',
+    });
+    expect(plan.nextVersion).toBe('0.1.0-alpha.0');
+    expect(plan.bump).toBe('none');
+  });
+
+  it('honors --bump when forced on a first release', async () => {
+    const plan = await planRelease({
+      inputs: inputs({
+        firstRelease: true,
+        previousVersion: null,
+        currentVersion: '0.1.0',
+        commits: [commit({ shortSha: 'aa', subject: 'feat!: big bang' })],
+      }),
+      config: configWith(),
+      provider: null,
+      forceBump: 'major',
+      date: '2026-04-11',
+    });
+    expect(plan.nextVersion).toBe('1.0.0');
+    expect(plan.bump).toBe('major');
+    expect(plan.bumpForced).toBe(true);
   });
 });
 
