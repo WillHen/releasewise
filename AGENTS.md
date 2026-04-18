@@ -124,7 +124,7 @@ Commits rules documented above and are enforced by review, not tooling.
 
 ## Tooling
 
-- Runtime: **Bun** (≥ 1.1). `bun` is not yet installed on this machine; scaffold files are written by hand until it is.
+- Runtime: **Bun** (≥ 1.3, per `engines.bun` in `package.json`).
 - CLI framework: **citty**
 - Validation: **Zod**
 - Tests: **bun test**
