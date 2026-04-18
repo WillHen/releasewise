@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-04-18
+
+### Fixed
+
+- `--no-ai`, `--no-push`, and `--no-github-release` flags now correctly disable AI, git push, and GitHub Release creation; previously passing these flags had no effect and the operations ran anyway
+
 ## [0.3.3] - 2026-04-18
 
 ### Fixed
