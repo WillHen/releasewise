@@ -243,6 +243,23 @@ export async function getCommitsBetween(
   return splitCommitRecords(out).map(parseCommitRecord);
 }
 
+/**
+ * Every commit reachable from `to`, newest first. Use this for the
+ * first-release case (no prior tag) where `from..to` would drop the
+ * root commit — git's `..` operator is left-exclusive, so `rootSha..HEAD`
+ * silently excludes the root.
+ */
+export async function getAllCommitsUpTo(
+  to: string,
+  opts: GitCommandOptions = {},
+): Promise<Commit[]> {
+  assertSafeArg(to, 'to');
+  const cwd = opts.cwd ?? process.cwd();
+  const format = `--format=${COMMIT_FORMAT}${RECORD_SEP}`;
+  const out = await $`git log ${format} ${to}`.cwd(cwd).text();
+  return splitCommitRecords(out).map(parseCommitRecord);
+}
+
 /** Unified diff between two refs, as a single string. */
 export async function getDiffBetween(
   from: string,
@@ -253,6 +270,27 @@ export async function getDiffBetween(
   assertSafeArg(to, 'to');
   const cwd = opts.cwd ?? process.cwd();
   const out = await $`git diff ${from} ${to}`.cwd(cwd).text();
+  return out;
+}
+
+/**
+ * Cumulative diff from an empty baseline up to `to`. For the first
+ * release, `getDiffBetween(rootSha, 'HEAD')` omits the root commit's
+ * own changes; diffing against the empty tree includes them.
+ *
+ * The baseline SHA is computed at runtime via `git hash-object -t tree
+ * /dev/null` so this works in both SHA-1 and SHA-256 repos.
+ */
+export async function getDiffFromEmpty(
+  to: string,
+  opts: GitCommandOptions = {},
+): Promise<string> {
+  assertSafeArg(to, 'to');
+  const cwd = opts.cwd ?? process.cwd();
+  const emptyTree = (
+    await $`git hash-object -t tree /dev/null`.cwd(cwd).text()
+  ).trim();
+  const out = await $`git diff ${emptyTree} ${to}`.cwd(cwd).text();
   return out;
 }
 

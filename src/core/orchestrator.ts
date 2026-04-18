@@ -41,9 +41,11 @@ import type { Config } from './config.ts';
 import {
   commit as gitCommit,
   createTag,
+  getAllCommitsUpTo,
   getBaseRef,
   getCommitsBetween,
   getDiffBetween,
+  getDiffFromEmpty,
   getHeadSha,
   getLastTag,
   getRemoteUrl,
@@ -89,9 +91,15 @@ export interface ReleaseInputs {
   currentVersion: string;
   /** Version embedded in the last tag, or null if there was no prior tag. */
   previousVersion: string | null;
-  /** Commits in `baseRef..HEAD`, newest first. */
+  /**
+   * Commits in `baseRef..HEAD`, newest first. On a first release this is
+   * every commit reachable from HEAD (empty baseline, no exclusion).
+   */
   commits: Commit[];
-  /** Raw unified diff `baseRef..HEAD`. */
+  /**
+   * Raw unified diff `baseRef..HEAD`. On a first release this is the
+   * cumulative diff from the empty tree up to HEAD.
+   */
   rawDiff: string;
   /** Parsed `origin` remote info, or null. */
   remote: RemoteInfo | null;
@@ -136,8 +144,15 @@ export async function collectReleaseInputs(
       ? stripTagPrefix(lastTag, opts.config.release.tagPrefix)
       : null;
 
-  const commits = await getCommitsBetween(baseRef, 'HEAD', { cwd });
-  const rawDiff = await getDiffBetween(baseRef, 'HEAD', { cwd });
+  // First-release path uses an explicit empty baseline so the root commit
+  // and its contents are included. `baseRef..HEAD` would exclude the root
+  // because git's `..` operator is left-exclusive.
+  const commits = firstRelease
+    ? await getAllCommitsUpTo('HEAD', { cwd })
+    : await getCommitsBetween(baseRef, 'HEAD', { cwd });
+  const rawDiff = firstRelease
+    ? await getDiffFromEmpty('HEAD', { cwd })
+    : await getDiffBetween(baseRef, 'HEAD', { cwd });
 
   const remoteUrl = await getRemoteUrl('origin', { cwd });
   const remote = remoteUrl ? parseRemoteUrl(remoteUrl) : null;
@@ -229,9 +244,10 @@ export async function planRelease(
   const date = opts.date ?? todayIso();
 
   if (inputs.commits.length === 0) {
-    throw new Error(
-      `No commits in range ${inputs.baseRef}..HEAD — nothing to release.`,
-    );
+    const range = inputs.firstRelease
+      ? 'reachable from HEAD'
+      : `in range ${inputs.baseRef}..HEAD`;
+    throw new Error(`No commits ${range} — nothing to release.`);
   }
 
   // 1) Classification mode (CLI override > config > v1 fallback).

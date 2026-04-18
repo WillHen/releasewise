@@ -4,10 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  getAllCommitsUpTo,
   getBaseRef,
   getCommitsBetween,
   getCurrentBranch,
   getDiffBetween,
+  getDiffFromEmpty,
   getDiffStat,
   getHeadSha,
   getLastTag,
@@ -194,6 +196,57 @@ describe('getCommitsBetween', () => {
     );
     expect(commits[0]?.body).toContain('BREAKING CHANGE');
     expect(commits[0]?.body).toContain('newlines');
+  });
+});
+
+describe('getAllCommitsUpTo', () => {
+  it('returns the single commit for a fresh repo with no tags', async () => {
+    fx.writeFile('a.txt', '1');
+    await fx.commit('feat: initial');
+
+    const commits = await getAllCommitsUpTo('HEAD', { cwd: fx.dir });
+    expect(commits).toHaveLength(1);
+    expect(commits[0]?.subject).toBe('feat: initial');
+  });
+
+  it('returns every commit newest-first including the root', async () => {
+    fx.writeFile('a.txt', '1');
+    const root = await fx.commit('feat: initial');
+    fx.writeFile('a.txt', '2');
+    await fx.commit('feat: second');
+    fx.writeFile('b.txt', '1');
+    await fx.commit('fix: third');
+
+    const commits = await getAllCommitsUpTo('HEAD', { cwd: fx.dir });
+    expect(commits).toHaveLength(3);
+    expect(commits[0]?.subject).toBe('fix: third');
+    expect(commits[1]?.subject).toBe('feat: second');
+    expect(commits[2]?.subject).toBe('feat: initial');
+    expect(commits[2]?.sha).toBe(root);
+  });
+});
+
+describe('getDiffFromEmpty', () => {
+  it('includes the root commit file contents on a single-commit repo', async () => {
+    fx.writeFile('a.txt', 'hello\n');
+    await fx.commit('feat: initial');
+
+    const diff = await getDiffFromEmpty('HEAD', { cwd: fx.dir });
+    expect(diff).toContain('a.txt');
+    expect(diff).toContain('+hello');
+  });
+
+  it('includes the root commit file contents on a multi-commit repo', async () => {
+    fx.writeFile('root.txt', 'root-content\n');
+    await fx.commit('feat: initial');
+    fx.writeFile('later.txt', 'later-content\n');
+    await fx.commit('feat: later');
+
+    const diff = await getDiffFromEmpty('HEAD', { cwd: fx.dir });
+    expect(diff).toContain('root.txt');
+    expect(diff).toContain('+root-content');
+    expect(diff).toContain('later.txt');
+    expect(diff).toContain('+later-content');
   });
 });
 

@@ -552,6 +552,34 @@ describe('collectReleaseInputs — integration with git fixture', () => {
     expect(result.firstRelease).toBe(true);
     expect(result.previousVersion).toBeNull();
     expect(result.currentVersion).toBe('0.1.0');
+    // Root commit must not be dropped: both commits are collected and the
+    // diff covers the root commit's files (otherwise the first release
+    // would classify from a partial view of the repo).
+    expect(result.commits).toHaveLength(2);
+    expect(result.commits[0]!.subject).toBe('feat: add a');
+    expect(result.commits[1]!.subject).toBe('feat: initial');
+    expect(result.rawDiff).toContain('package.json');
+    expect(result.rawDiff).toContain('src/a.ts');
+  });
+
+  it('collects the root commit on a first release with a single commit', async () => {
+    fixture.writeFile(
+      'package.json',
+      JSON.stringify({ name: 'fixture', version: '0.1.0' }, null, 2) + '\n',
+    );
+    fixture.writeFile('src/only.ts', 'export const only = 1;\n');
+    await fixture.commit('feat: only commit');
+
+    const result = await collectReleaseInputs({
+      cwd: fixture.dir,
+      config: defaultConfig(),
+    });
+
+    expect(result.firstRelease).toBe(true);
+    expect(result.commits).toHaveLength(1);
+    expect(result.commits[0]!.subject).toBe('feat: only commit');
+    expect(result.rawDiff).toContain('src/only.ts');
+    expect(result.rawDiff).toContain('+export const only = 1;');
   });
 
   it('reads an existing CHANGELOG.md', async () => {
