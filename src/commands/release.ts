@@ -368,10 +368,15 @@ export const releaseCommand = defineCommand({
         'Without this flag the command only previews.',
       default: false,
     },
-    'no-push': {
+    // Negated booleans follow citty's convention: define the positive
+    // option with default: true, and `--no-<name>` flips it to false.
+    // Declaring the option as `'no-<name>'` directly does NOT work —
+    // citty's auto-negation still produces `args.<name> = false`, while
+    // the literal `no-<name>` key stays at its default.
+    push: {
       type: 'boolean',
-      description: 'Do not run git push after tagging',
-      default: false,
+      description: 'Run git push after tagging (--no-push to skip)',
+      default: true,
     },
     estimate: {
       type: 'boolean',
@@ -383,15 +388,15 @@ export const releaseCommand = defineCommand({
       description: 'Structured JSON output',
       default: false,
     },
-    'no-ai': {
+    ai: {
       type: 'boolean',
-      description: 'Skip AI, use template fallback',
-      default: false,
+      description: 'Use AI for classification and notes (--no-ai for template fallback)',
+      default: true,
     },
-    'no-github-release': {
+    'github-release': {
       type: 'boolean',
-      description: 'Skip GitHub Release creation',
-      default: false,
+      description: 'Create a GitHub Release after pushing (--no-github-release to skip)',
+      default: true,
     },
     credits: {
       type: 'boolean',
@@ -410,8 +415,9 @@ export const releaseCommand = defineCommand({
     },
   },
   async run({ args }) {
-    // citty exposes dashed flags under their original keys. Bridge to
-    // the camelCase shape runRelease expects.
+    // `push`, `ai`, and `github-release` are positive booleans (default
+    // true); passing `--no-<name>` flips them to false, which is what
+    // runRelease's negated `noX` fields represent.
     const result = await runRelease({
       bump: args.bump as string | undefined,
       mode: args.mode as string | undefined,
@@ -419,11 +425,11 @@ export const releaseCommand = defineCommand({
       from: args.from as string | undefined,
       tone: args.tone as string | undefined,
       estimate: Boolean(args.estimate),
-      noPush: Boolean(args['no-push']),
-      noGithubRelease: Boolean(args['no-github-release']),
+      noPush: args.push === false,
+      noGithubRelease: args['github-release'] === false,
       json: Boolean(args.json),
       yes: Boolean(args.yes),
-      noAi: Boolean(args['no-ai']),
+      noAi: args.ai === false,
     });
     if (result.exitCode !== 0) {
       process.exit(result.exitCode);
