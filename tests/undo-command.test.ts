@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
 import { runUndo, type RunUndoDeps } from '../src/commands/undo.ts';
+import { ErrorCodes, ReleaseError } from '../src/errors.ts';
 import type { TransactionLog } from '../src/types.ts';
 
 // --------- Helpers ---------
@@ -158,6 +159,50 @@ describe('runUndo', () => {
 
     expect(result.exitCode).toBe(1);
     expect(captured.stderr).toContain('tag not found');
+  });
+
+  it('formats thrown ReleaseError with code, step, and hint via formatError', async () => {
+    const { deps, captured } = makeDeps(sampleLog(), {
+      deleteTag: async () => {
+        throw new ReleaseError({
+          code: ErrorCodes.GIT_TAG_FAILED,
+          message: 'could not delete tag',
+          step: 'undo-tag',
+          hint: 'Delete it manually with `git tag -d v1.1.0`.',
+        });
+      },
+    });
+    const result = await runUndo(deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain(
+      `Error [${ErrorCodes.GIT_TAG_FAILED}] during undo-tag:`,
+    );
+    expect(captured.stderr).toContain('could not delete tag');
+    expect(captured.stderr).toContain(
+      'Hint: Delete it manually with `git tag -d v1.1.0`.',
+    );
+    expect(captured.stderr).not.toContain('Cause chain:');
+  });
+
+  it('appends cause chain under verbose mode', async () => {
+    const inner = new Error('underlying shell failure');
+    const { deps, captured } = makeDeps(sampleLog(), {
+      verbose: true,
+      deleteTag: async () => {
+        throw new ReleaseError({
+          code: ErrorCodes.GIT_TAG_FAILED,
+          message: 'could not delete tag',
+          step: 'undo-tag',
+          cause: inner,
+        });
+      },
+    });
+    const result = await runUndo(deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain('Cause chain:');
+    expect(captured.stderr).toContain('underlying shell failure');
   });
 
   it('shows abbreviated SHA in success output', async () => {

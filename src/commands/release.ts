@@ -263,7 +263,7 @@ export async function runRelease(
 
     return { exitCode: 0 };
   } catch (err) {
-    stderr(formatError(err, { verbose: args.verbose === true }));
+    stderr(formatError(err, { verbose: Boolean(args.verbose) }));
     return { exitCode: 1 };
   }
 }

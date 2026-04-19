@@ -39,7 +39,7 @@ export const ErrorCodes = {
 export type ErrorCode = (typeof ErrorCodes)[keyof typeof ErrorCodes];
 
 export interface ReleaseErrorOptions {
-  code: string;
+  code: ErrorCode;
   message: string;
   hint?: string;
   step?: string;
@@ -48,7 +48,7 @@ export interface ReleaseErrorOptions {
 }
 
 export class ReleaseError extends Error {
-  readonly code: string;
+  readonly code: ErrorCode;
   readonly hint?: string;
   step?: string;
   readonly details?: Record<string, string | number | boolean>;
@@ -105,7 +105,7 @@ export function findReleaseError(err: unknown): ReleaseError | null {
  */
 export async function withStep<T>(
   step: string,
-  code: string,
+  code: ErrorCode,
   hint: string | undefined,
   fn: () => Promise<T>,
 ): Promise<T> {
@@ -134,7 +134,7 @@ export async function withStep<T>(
 export function formatError(err: unknown, opts: { verbose: boolean }): string {
   const primary =
     findReleaseError(err) ??
-    (isCodedError(err) ? (err as CodedError) : undefined);
+    (isErrorLike(err) ? (err as CodedError) : undefined);
   const code = primary?.code ?? ErrorCodes.UNKNOWN;
   const message =
     primary?.message ?? (err instanceof Error ? err.message : String(err));
@@ -175,7 +175,7 @@ export function formatError(err: unknown, opts: { verbose: boolean }): string {
   return lines.join('\n') + '\n';
 }
 
-function isCodedError(err: unknown): boolean {
+function isErrorLike(err: unknown): boolean {
   return (
     err !== null &&
     typeof err === 'object' &&
