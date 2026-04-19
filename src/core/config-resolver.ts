@@ -47,8 +47,7 @@ export interface ResolvedApiKey {
 
 export class MissingApiKeyError extends Error {
   readonly code = ErrorCodes.API_KEY_MISSING;
-  readonly hint =
-    'Prefer the provider env var (listed above) for local dev and CI secrets.';
+  readonly hint: string;
   constructor(public readonly provider: ProviderName) {
     const envVar = PROVIDER_ENV_VARS[provider];
     super(
@@ -58,6 +57,7 @@ export class MissingApiKeyError extends Error {
         `  • --api-key flag (not recommended outside CI)`,
     );
     this.name = 'MissingApiKeyError';
+    this.hint = `Prefer the ${envVar} env var for local dev and CI secrets.`;
   }
 }
 
