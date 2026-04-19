@@ -18,6 +18,7 @@
 import { $ } from 'bun';
 import { z } from 'zod';
 
+import { ErrorCodes, ReleaseError } from '../errors.ts';
 import type { RemoteInfo } from '../types.ts';
 import { assertSafeArg } from './git.ts';
 
@@ -237,17 +238,38 @@ async function defaultApiCreateRelease(
 
   if (!response.ok) {
     const text = await response.text().catch(() => '');
-    throw new Error(
-      `GitHub API returned ${response.status}: ${text.slice(0, 200)}`,
-    );
+    throw new ReleaseError({
+      code: ErrorCodes.GITHUB_RELEASE_FAILED,
+      message: `GitHub API returned ${response.status}: ${text.slice(0, 200)}`,
+      hint: hintForGithubStatus(response.status),
+      details: { status: response.status },
+    });
   }
 
   const raw: unknown = await response.json();
   const parsed = GithubReleaseResponseSchema.safeParse(raw);
   if (!parsed.success) {
-    throw new Error(
-      `GitHub API returned an unexpected response shape: ${parsed.error.message}`,
-    );
+    throw new ReleaseError({
+      code: ErrorCodes.GITHUB_RELEASE_FAILED,
+      message: `GitHub API returned an unexpected response shape: ${parsed.error.message}`,
+      hint: 'Re-run the printed `gh release create ...` command manually to complete the release.',
+    });
   }
   return { id: parsed.data.id, url: parsed.data.html_url };
+}
+
+function hintForGithubStatus(status: number): string {
+  if (status === 401 || status === 403) {
+    return 'Check that GITHUB_TOKEN/GH_TOKEN has `repo` + `contents:write` scopes for this repo.';
+  }
+  if (status === 404) {
+    return 'Repo not found — confirm the `origin` remote points at a repo the token can access.';
+  }
+  if (status === 422) {
+    return 'A release for this tag may already exist. Delete it on GitHub, or bump to a new version.';
+  }
+  if (status === 429 || status === 503) {
+    return 'Hit a rate limit — wait a minute and retry. `--no-github-release` skips this step.';
+  }
+  return 'Re-run the printed `gh release create ...` command manually to complete the release.';
 }

@@ -524,4 +524,43 @@ describe('runRelease — error handling', () => {
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('string thrown');
   });
+
+  it('renders ReleaseError with code header + hint in normal mode', async () => {
+    const { ReleaseError, ErrorCodes } = await import('../src/errors.ts');
+    const { deps, sinks } = buildDeps({
+      planReleaseImpl: async () => {
+        throw new ReleaseError({
+          code: ErrorCodes.RELEASE_NO_COMMITS,
+          step: 'plan',
+          message: 'No commits in range v1.2.2..HEAD — nothing to release.',
+          hint: 'Use --from <ref> to widen the range.',
+        });
+      },
+    });
+    const result = await runRelease({}, deps);
+    expect(result.exitCode).toBe(1);
+    expect(sinks.stderr).toContain(
+      'Error [ERR_RELEASE_NO_COMMITS] during plan:',
+    );
+    expect(sinks.stderr).toContain('Hint: Use --from <ref>');
+    expect(sinks.stderr).not.toContain('Cause chain:');
+  });
+
+  it('includes the cause chain under --verbose', async () => {
+    const { ReleaseError, ErrorCodes } = await import('../src/errors.ts');
+    const { deps, sinks } = buildDeps({
+      planReleaseImpl: async () => {
+        throw new ReleaseError({
+          code: ErrorCodes.GIT_PUSH_FAILED,
+          step: 'push',
+          message: 'push failed: boom',
+          cause: new Error('underlying shell error'),
+        });
+      },
+    });
+    const result = await runRelease({ verbose: true }, deps);
+    expect(result.exitCode).toBe(1);
+    expect(sinks.stderr).toContain('Cause chain:');
+    expect(sinks.stderr).toContain('underlying shell error');
+  });
 });

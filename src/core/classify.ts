@@ -23,6 +23,7 @@
  * ship a patch-bump release by accident. The orchestrator decides
  * whether to surface the failure or retry the whole run.
  */
+import { ErrorCodes, ReleaseError } from '../errors.ts';
 import type {
   AIProvider,
   BumpType,
@@ -65,6 +66,9 @@ export interface ClassifyOptions {
  * actionable rather than silently picking a bump lower than reality.
  */
 export class ClassifierError extends Error {
+  readonly code = ErrorCodes.CLASSIFIER_FAILED;
+  readonly hint =
+    'Retry, or re-run with --no-ai to fall back to Conventional Commits only.';
   readonly unclassifiedShas: string[];
   readonly cause: unknown;
   constructor(unclassifiedShas: string[], cause: unknown) {
@@ -206,7 +210,12 @@ export function parseClassifierResponse(text: string): RawClassification[] {
       lastBracket === -1 ||
       lastBracket < firstBracket
     ) {
-      throw new Error('Classifier response did not contain a JSON array');
+      throw new ReleaseError({
+        code: ErrorCodes.CLASSIFIER_PARSE,
+        message: 'Classifier response did not contain a JSON array',
+        hint: 'Retry, or re-run with --no-ai to fall back to Conventional Commits only.',
+        details: { sample: trimmed.slice(0, 200) },
+      });
     }
     trimmed = trimmed.slice(firstBracket, lastBracket + 1);
   }
@@ -215,13 +224,22 @@ export function parseClassifierResponse(text: string): RawClassification[] {
   try {
     parsed = JSON.parse(trimmed);
   } catch (err) {
-    throw new Error(
-      `Classifier response was not valid JSON: ${(err as Error).message}`,
-    );
+    throw new ReleaseError({
+      code: ErrorCodes.CLASSIFIER_PARSE,
+      message: `Classifier response was not valid JSON: ${(err as Error).message}`,
+      hint: 'Retry, or re-run with --no-ai to fall back to Conventional Commits only.',
+      cause: err,
+      details: { sample: trimmed.slice(0, 200) },
+    });
   }
 
   if (!Array.isArray(parsed)) {
-    throw new Error('Classifier response was not a JSON array');
+    throw new ReleaseError({
+      code: ErrorCodes.CLASSIFIER_PARSE,
+      message: 'Classifier response was not a JSON array',
+      hint: 'Retry, or re-run with --no-ai to fall back to Conventional Commits only.',
+      details: { sample: trimmed.slice(0, 200) },
+    });
   }
 
   const out: RawClassification[] = [];

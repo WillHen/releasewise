@@ -221,6 +221,18 @@ describe('parseClassifierResponse', () => {
   it('throws on malformed JSON', () => {
     expect(() => parseClassifierResponse('[{"sha":"aa1"')).toThrow();
   });
+
+  it('parse errors carry code ERR_CLASSIFIER_PARSE and a sample', () => {
+    try {
+      parseClassifierResponse('not json');
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('ERR_CLASSIFIER_PARSE');
+      expect((err as { details?: { sample?: string } }).details?.sample).toBe(
+        'not json',
+      );
+    }
+  });
 });
 
 // --------- classifyCommits: conventional mode ---------
@@ -410,6 +422,8 @@ describe('classifyCommits — mixed mode', () => {
     expect(caught).toBeInstanceOf(ClassifierError);
     expect((caught as ClassifierError).unclassifiedShas).toEqual(['zz']);
     expect((caught as ClassifierError).message).toContain('rate limit');
+    expect((caught as ClassifierError).code).toBe('ERR_CLASSIFIER_FAILED');
+    expect((caught as ClassifierError).hint).toBeTruthy();
   });
 
   it('retries once before failing, and succeeds if the second attempt works', async () => {

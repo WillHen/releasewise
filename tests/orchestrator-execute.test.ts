@@ -225,6 +225,29 @@ describe('executeRelease', () => {
     ).rejects.toThrow('CHANGELOG.md has uncommitted changes');
   });
 
+  it('dirty-tree refusal throws a ReleaseError with RELEASE_DIRTY', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+    fx.writeFile('package.json', '{ "name": "dirty" }');
+    await $`git add package.json`.cwd(fx.dir).quiet();
+
+    const plan = buildPlan();
+    let caught: unknown;
+    try {
+      await executeRelease({
+        plan,
+        config: config(),
+        cwd: fx.dir,
+        noPush: true,
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect((caught as { code?: string }).code).toBe('ERR_RELEASE_DIRTY');
+    expect((caught as { step?: string }).step).toBe('preflight');
+    expect((caught as { hint?: string }).hint).toBeTruthy();
+  });
+
   it('noPush prevents git push even when config says pushOnRelease', async () => {
     seedPackageJson();
     await fx.commit('chore: init');

@@ -20,6 +20,7 @@
  * tool-specific name just confuses users who switch providers
  * (same key silently pointed at a different service → 401, no clue why).
  */
+import { ErrorCodes } from '../errors.ts';
 import type { Config } from './config.ts';
 import type { ProviderName } from '../types.ts';
 
@@ -45,6 +46,7 @@ export interface ResolvedApiKey {
 }
 
 export class MissingApiKeyError extends Error {
+  readonly code = ErrorCodes.API_KEY_MISSING;
   constructor(public readonly provider: ProviderName) {
     const envVar = PROVIDER_ENV_VARS[provider];
     super(

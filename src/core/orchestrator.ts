@@ -33,6 +33,7 @@ import type {
   ReleaseNotes,
   RemoteInfo,
 } from '../types.ts';
+import { ErrorCodes, ReleaseError, withStep } from '../errors.ts';
 import { truncateDiff, type TruncatedDiff } from '../utils/diff-truncator.ts';
 import { parseRemoteUrl } from '../utils/remote-url.ts';
 import { prependChangelog } from './changelog.ts';
@@ -247,7 +248,18 @@ export async function planRelease(
     const range = inputs.firstRelease
       ? 'reachable from HEAD'
       : `in range ${inputs.baseRef}..HEAD`;
-    throw new Error(`No commits ${range} — nothing to release.`);
+    throw new ReleaseError({
+      code: ErrorCodes.RELEASE_NO_COMMITS,
+      step: 'plan',
+      message: `No commits ${range} — nothing to release.`,
+      hint: inputs.firstRelease
+        ? 'For a first release, pass --bump <major|minor|patch> to force a version.'
+        : 'Use --from <ref> to widen the range, or --bump to force a version.',
+      details: {
+        baseRef: inputs.baseRef,
+        firstRelease: Boolean(inputs.firstRelease),
+      },
+    });
   }
 
   // 1) Classification mode (CLI override > config > v1 fallback).
@@ -462,9 +474,13 @@ export async function executeRelease(
 
   for (const path of [pkgRelative, changelogRelative]) {
     if (await isPathDirty(path, { cwd })) {
-      throw new Error(
-        `${path} has uncommitted changes. Commit or stash them before releasing.`,
-      );
+      throw new ReleaseError({
+        code: ErrorCodes.RELEASE_DIRTY,
+        step: 'preflight',
+        message: `${path} has uncommitted changes. Commit or stash them before releasing.`,
+        hint: `Run \`git status\` to see changes; \`git stash\` to set them aside and retry.`,
+        details: { path },
+      });
     }
   }
 
@@ -479,20 +495,31 @@ export async function executeRelease(
     '${version}',
     plan.nextVersion,
   );
-  const commitSha = await gitCommit(
-    commitMessage,
-    [pkgRelative, changelogRelative],
-    { cwd },
+  const commitSha = await withStep(
+    'commit',
+    ErrorCodes.GIT_COMMIT_FAILED,
+    'Check `git status` and your pre-commit hooks, then retry.',
+    () => gitCommit(commitMessage, [pkgRelative, changelogRelative], { cwd }),
   );
 
   // --- 4. Tag ---
   const tagName = `${config.release.tagPrefix}${plan.nextVersion}`;
-  await createTag(tagName, `Release ${tagName}`, { cwd });
+  await withStep(
+    'tag',
+    ErrorCodes.GIT_TAG_FAILED,
+    `A tag named ${tagName} may already exist. Run \`git tag -d ${tagName}\` to remove it, or pass --bump to pick a new version.`,
+    () => createTag(tagName, `Release ${tagName}`, { cwd }),
+  );
 
   // --- 5. Push (if enabled) ---
   const shouldPush = !opts.noPush && config.release.pushOnRelease;
   if (shouldPush) {
-    await push({ cwd });
+    await withStep(
+      'push',
+      ErrorCodes.GIT_PUSH_FAILED,
+      'Verify the `origin` remote is set and you have push permissions (`git remote -v`, `git push` manually to confirm).',
+      () => push({ cwd }),
+    );
   }
 
   // --- 6. GitHub Release (if enabled and pushed) ---

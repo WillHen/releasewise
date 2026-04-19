@@ -17,6 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 
 import { type z } from 'zod';
 
+import { ErrorCodes, ReleaseError } from '../errors.ts';
 import { configSchema, type Config, type ConfigInput } from './config.ts';
 
 export const CONFIG_FILENAME = '.releasewise.json';
@@ -33,6 +34,8 @@ export interface LoadedConfig {
 }
 
 export class ConfigNotFoundError extends Error {
+  readonly code = ErrorCodes.CONFIG_MISSING;
+  readonly hint = 'Run `releasewise init` in the project root to create one.';
   constructor(searchedFrom: string) {
     super(
       `No ${CONFIG_FILENAME} found starting from ${searchedFrom}. ` +
@@ -43,6 +46,8 @@ export class ConfigNotFoundError extends Error {
 }
 
 export class ConfigValidationError extends Error {
+  readonly code = ErrorCodes.CONFIG_INVALID;
+  readonly hint = 'Fix the listed fields in your config file and retry.';
   constructor(
     public readonly filePath: string,
     public readonly zodError: z.ZodError,
@@ -76,12 +81,22 @@ function readJson(filePath: string): unknown {
   try {
     raw = readFileSync(filePath, 'utf8');
   } catch (err) {
-    throw new Error(`Could not read ${filePath}: ${(err as Error).message}`);
+    throw new ReleaseError({
+      code: ErrorCodes.CONFIG_UNREADABLE,
+      message: `Could not read ${filePath}: ${(err as Error).message}`,
+      hint: 'Check file permissions and that the path exists (`ls -l <path>`).',
+      cause: err,
+    });
   }
   try {
     return JSON.parse(raw);
   } catch (err) {
-    throw new Error(`Invalid JSON in ${filePath}: ${(err as Error).message}`);
+    throw new ReleaseError({
+      code: ErrorCodes.CONFIG_INVALID_JSON,
+      message: `Invalid JSON in ${filePath}: ${(err as Error).message}`,
+      hint: "Validate the file with `jq . <path>` or your editor's JSON linter.",
+      cause: err,
+    });
   }
 }
 
@@ -127,7 +142,11 @@ export function loadConfig(opts: {
 
   if (!baseConfigPath) throw new ConfigNotFoundError(cwd);
   if (!existsSync(baseConfigPath)) {
-    throw new Error(`Config file does not exist: ${baseConfigPath}`);
+    throw new ReleaseError({
+      code: ErrorCodes.CONFIG_MISSING,
+      message: `Config file does not exist: ${baseConfigPath}`,
+      hint: 'The file vanished between discovery and read — retry the command.',
+    });
   }
 
   const baseDir = dirname(baseConfigPath);

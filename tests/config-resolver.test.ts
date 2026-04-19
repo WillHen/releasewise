@@ -95,6 +95,17 @@ describe('resolveApiKey — edge cases', () => {
     expect(() => resolveApiKey(cfg, { env: {} })).toThrow(MissingApiKeyError);
   });
 
+  it('MissingApiKeyError exposes code ERR_API_KEY_MISSING', () => {
+    const cfg = configWith('openai');
+    try {
+      resolveApiKey(cfg, { env: {} });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(MissingApiKeyError);
+      expect((err as MissingApiKeyError).code).toBe('ERR_API_KEY_MISSING');
+    }
+  });
+
   it('error message names the provider, env var, and remediation paths', () => {
     const cfg = configWith('groq');
     try {

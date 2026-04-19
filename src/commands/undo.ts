@@ -20,6 +20,7 @@ import {
   readTransactionLog as realReadTransactionLog,
   transactionLogPath,
 } from '../core/rollback.ts';
+import { formatError } from '../errors.ts';
 import type { TransactionLog } from '../types.ts';
 
 // --------- Public shape ---------
@@ -28,6 +29,7 @@ export interface RunUndoDeps {
   cwd?: string;
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
+  verbose?: boolean;
   readTransactionLog?: (cwd: string) => Promise<TransactionLog | null>;
   isClean?: (opts: { cwd: string }) => Promise<boolean>;
   deleteTag?: (name: string, opts: { cwd: string }) => Promise<void>;
@@ -128,8 +130,7 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
 
     return { exitCode: 0 };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    stderr(`Error: ${message}\n`);
+    stderr(formatError(err, { verbose: deps.verbose === true }));
     return { exitCode: 1 };
   }
 }
@@ -141,8 +142,15 @@ export const undoCommand = defineCommand({
     name: 'undo',
     description: 'Revert the last local (unpushed) release.',
   },
-  async run() {
-    const result = await runUndo();
+  args: {
+    verbose: {
+      type: 'boolean',
+      description: 'Verbose logging with debug detail',
+      default: false,
+    },
+  },
+  async run({ args }) {
+    const result = await runUndo({ verbose: Boolean(args.verbose) });
     if (result.exitCode !== 0) {
       process.exit(result.exitCode);
     }

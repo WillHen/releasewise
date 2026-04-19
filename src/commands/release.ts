@@ -48,6 +48,7 @@ import {
   type ReleaseInputs,
   type ReleasePlan,
 } from '../core/orchestrator.ts';
+import { formatError } from '../errors.ts';
 import type { AIProvider, BumpType } from '../types.ts';
 import { estimateTokens } from '../utils/token-estimator.ts';
 import { formatHumanPreview, formatJsonPreview } from '../utils/preview.ts';
@@ -71,6 +72,7 @@ export interface RunReleaseArgs {
    */
   yes?: boolean;
   noAi?: boolean;
+  verbose?: boolean;
 }
 
 export interface RunReleaseDeps {
@@ -261,8 +263,7 @@ export async function runRelease(
 
     return { exitCode: 0 };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    stderr(`Error: ${message}\n`);
+    stderr(formatError(err, { verbose: args.verbose === true }));
     return { exitCode: 1 };
   }
 }
@@ -432,6 +433,7 @@ export const releaseCommand = defineCommand({
       json: Boolean(args.json),
       yes: Boolean(args.yes),
       noAi: args.ai === false,
+      verbose: Boolean(args.verbose),
     });
     if (result.exitCode !== 0) {
       process.exit(result.exitCode);

@@ -171,6 +171,30 @@ describe('loadConfig', () => {
     );
   });
 
+  it('ConfigValidationError carries code + hint', () => {
+    writeFixture(CONFIG_FILENAME, JSON.stringify({ commitMode: 'yolo' }));
+    try {
+      loadConfig({ cwd: fixtureDir });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect(err).toBeInstanceOf(ConfigValidationError);
+      const e = err as ConfigValidationError;
+      expect(e.code).toBe('ERR_CONFIG_INVALID');
+      expect(e.hint).toBeTruthy();
+    }
+  });
+
+  it('throws ERR_CONFIG_INVALID_JSON when the file is not valid JSON', () => {
+    writeFixture(CONFIG_FILENAME, '{ not valid json');
+    try {
+      loadConfig({ cwd: fixtureDir });
+      throw new Error('should have thrown');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('ERR_CONFIG_INVALID_JSON');
+      expect((err as Error).message).toContain('Invalid JSON');
+    }
+  });
+
   it('formats ConfigValidationError with path and message', () => {
     writeFixture(
       CONFIG_FILENAME,
@@ -197,6 +221,8 @@ describe('loadConfig', () => {
       // hit something else (tolerated). Only assert if we threw a
       // ConfigNotFoundError — don't fail the test on a stray ancestor.
       if (err instanceof ConfigNotFoundError) {
+        expect(err.code).toBe('ERR_CONFIG_MISSING');
+        expect(err.hint).toBeTruthy();
         expect(err.message).toContain(CONFIG_FILENAME);
       }
     }
