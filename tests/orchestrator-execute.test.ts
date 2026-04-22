@@ -11,7 +11,10 @@ import {
 } from '../src/core/orchestrator.ts';
 import { defaultConfig, type Config } from '../src/core/config.ts';
 import { getHeadSha, getLastTag, isClean } from '../src/core/git.ts';
-import { readTransactionLog } from '../src/core/rollback.ts';
+import {
+  readTransactionLog,
+  transactionLogPath,
+} from '../src/core/rollback.ts';
 import type { ReleaseNotes } from '../src/types.ts';
 import { createGitFixture, type GitFixture } from './helpers/git-fixture.ts';
 
@@ -366,6 +369,23 @@ describe('executeRelease', () => {
     expect(log!.bumpCommitSha).toBe(await getHeadSha({ cwd: fx.dir }));
     expect(log!.tagName).toBeNull();
     expect(log!.pushed).toBe(false);
+  });
+
+  // The log file is a single snapshot — the latest write wins. A regression
+  // here would mean multiple successive writes accumulated in the file
+  // (corrupt JSON) instead of overwriting.
+  it('transaction log is overwritten, not appended, across the release', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+
+    const plan = buildPlan();
+    await executeRelease({ plan, config: config(), cwd: fx.dir, noPush: true });
+
+    const raw = readFileSync(transactionLogPath(fx.dir), 'utf8');
+    // A single JSON object, not concatenated — must parse cleanly and
+    // contain exactly one timestamp field.
+    expect(() => JSON.parse(raw)).not.toThrow();
+    expect(raw.match(/"timestamp":/g)).toHaveLength(1);
   });
 });
 

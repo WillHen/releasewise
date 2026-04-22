@@ -494,10 +494,6 @@ export async function executeRelease(
   // --- 2. Write CHANGELOG.md ---
   await fsWriteFile(plan.changelogPath, plan.changelogAfter, 'utf8');
 
-  // The transaction log is built incrementally and persisted after each
-  // step that mutates local or remote state. If something later fails
-  // (e.g. push, GitHub Release), the on-disk log still reflects what
-  // actually happened so `releasewise undo` can recover.
   const log: TransactionLog = {
     timestamp: new Date().toISOString(),
     fromVersion: plan.currentVersion,
