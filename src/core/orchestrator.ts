@@ -32,6 +32,7 @@ import type {
   Commit,
   ReleaseNotes,
   RemoteInfo,
+  TransactionLog,
 } from '../types.ts';
 import { ErrorCodes, ReleaseError, withStep } from '../errors.ts';
 import { truncateDiff, type TruncatedDiff } from '../utils/diff-truncator.ts';
@@ -457,9 +458,12 @@ export interface ExecuteReleaseResult {
  * Pre-flight: refuses to run if `package.json` or the changelog have
  * uncommitted changes, to avoid clobbering the user's in-progress work.
  *
- * After a successful release, a transaction log is written to
- * `.releasewise/last-release.json` so `releasewise undo` can reverse
- * the release if it hasn't been pushed yet.
+ * The transaction log at `.releasewise/last-release.json` is written
+ * incrementally — first as soon as the local commit lands, then
+ * updated after each subsequent step (tag, push, GitHub release)
+ * succeeds. That way, if a remote step fails, the on-disk log
+ * still accurately reflects the local mutations and `releasewise
+ * undo` can reverse them.
  */
 export async function executeRelease(
   opts: ExecuteReleaseOptions,
@@ -490,6 +494,21 @@ export async function executeRelease(
   // --- 2. Write CHANGELOG.md ---
   await fsWriteFile(plan.changelogPath, plan.changelogAfter, 'utf8');
 
+  // The transaction log is built incrementally and persisted after each
+  // step that mutates local or remote state. If something later fails
+  // (e.g. push, GitHub Release), the on-disk log still reflects what
+  // actually happened so `releasewise undo` can recover.
+  const log: TransactionLog = {
+    timestamp: new Date().toISOString(),
+    fromVersion: plan.currentVersion,
+    toVersion: plan.nextVersion,
+    bumpCommitSha: null,
+    tagName: null,
+    pushed: false,
+    githubReleaseId: null,
+    filesModified: [pkgRelative, changelogRelative],
+  };
+
   // --- 3. Commit ---
   const commitMessage = config.release.commitMessage.replace(
     '${version}',
@@ -501,6 +520,8 @@ export async function executeRelease(
     'Check `git status` and your pre-commit hooks, then retry.',
     () => gitCommit(commitMessage, [pkgRelative, changelogRelative], { cwd }),
   );
+  log.bumpCommitSha = commitSha;
+  await writeTransactionLog(cwd, log);
 
   // --- 4. Tag ---
   const tagName = `${config.release.tagPrefix}${plan.nextVersion}`;
@@ -510,6 +531,8 @@ export async function executeRelease(
     `A tag named ${tagName} may already exist. Run \`git tag -d ${tagName}\` to remove it, or pass --bump to pick a new version.`,
     () => createTag(tagName, `Release ${tagName}`, { cwd }),
   );
+  log.tagName = tagName;
+  await writeTransactionLog(cwd, log);
 
   // --- 5. Push (if enabled) ---
   const shouldPush = !opts.noPush && config.release.pushOnRelease;
@@ -520,6 +543,8 @@ export async function executeRelease(
       'Verify the `origin` remote is set and you have push permissions (`git remote -v`, `git push` manually to confirm).',
       () => push({ cwd }),
     );
+    log.pushed = true;
+    await writeTransactionLog(cwd, log);
   }
 
   // --- 6. GitHub Release (if enabled and pushed) ---
@@ -540,22 +565,11 @@ export async function executeRelease(
       cwd,
       env: opts.env,
     });
+    if (githubRelease.status === 'created') {
+      log.githubReleaseId = githubRelease.releaseId;
+      await writeTransactionLog(cwd, log);
+    }
   }
-
-  const githubReleaseId =
-    githubRelease?.status === 'created' ? githubRelease.releaseId : null;
-
-  // --- 7. Write transaction log for `releasewise undo` ---
-  await writeTransactionLog(cwd, {
-    timestamp: new Date().toISOString(),
-    fromVersion: plan.currentVersion,
-    toVersion: plan.nextVersion,
-    bumpCommitSha: commitSha,
-    tagName,
-    pushed: shouldPush,
-    githubReleaseId,
-    filesModified: [pkgRelative, changelogRelative],
-  });
 
   return {
     version: plan.nextVersion,

@@ -322,6 +322,51 @@ describe('executeRelease', () => {
     expect(log).not.toBeNull();
     expect(log!.pushed).toBe(true);
   });
+
+  // Partial-failure recovery: if push (or any post-commit step) fails, the
+  // on-disk transaction log must still describe the local mutations so
+  // `releasewise undo` can clean them up.
+  it('writes a transaction log describing the local commit + tag when push fails', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+    // Intentionally no remote — `git push` will fail mid-release.
+
+    const plan = buildPlan();
+    const cfg = config();
+    cfg.release.pushOnRelease = true;
+
+    await expect(
+      executeRelease({ plan, config: cfg, cwd: fx.dir }),
+    ).rejects.toMatchObject({ code: 'ERR_GIT_PUSH_FAILED' });
+
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.fromVersion).toBe('0.1.0');
+    expect(log!.toVersion).toBe('1.0.0');
+    expect(log!.bumpCommitSha).toBe(await getHeadSha({ cwd: fx.dir }));
+    expect(log!.tagName).toBe('v1.0.0');
+    expect(log!.pushed).toBe(false);
+    expect(log!.githubReleaseId).toBeNull();
+  });
+
+  it('writes a transaction log with tagName: null when tag creation fails', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+    // Pre-create a tag with the same name the release will try to use,
+    // so `git tag` refuses with a duplicate-tag error mid-release.
+    await fx.tag('v1.0.0');
+
+    const plan = buildPlan();
+    await expect(
+      executeRelease({ plan, config: config(), cwd: fx.dir, noPush: true }),
+    ).rejects.toMatchObject({ code: 'ERR_GIT_TAG_FAILED' });
+
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.bumpCommitSha).toBe(await getHeadSha({ cwd: fx.dir }));
+    expect(log!.tagName).toBeNull();
+    expect(log!.pushed).toBe(false);
+  });
 });
 
 // --------- Prerelease graduation E2E ---------
