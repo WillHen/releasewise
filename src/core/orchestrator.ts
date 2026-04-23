@@ -504,6 +504,9 @@ export async function executeRelease(
     githubReleaseId: null,
     filesModified: [pkgRelative, changelogRelative],
   };
+  // Persist now so a commit failure (e.g. a rejecting pre-commit hook)
+  // still leaves a record of the dirty files for `releasewise undo`.
+  await writeTransactionLog(cwd, log);
 
   // --- 3. Commit ---
   const commitMessage = config.release.commitMessage.replace(

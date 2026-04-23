@@ -77,20 +77,36 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
       return { exitCode: 1 };
     }
 
-    // 3. Refuse if the working tree is dirty.
+    // 3. No commit was created — the release failed before the commit
+    //    step (e.g. a rejecting pre-commit hook). Files listed in the log
+    //    are dirty in the working tree by design; print a `git checkout`
+    //    recipe instead of touching them, so we don't blow away unrelated
+    //    edits the user may have on the same paths. (This branch must run
+    //    before the dirty-tree check below — those dirty files are
+    //    exactly what we're undoing.)
+    if (!log.bumpCommitSha) {
+      if (log.filesModified.length > 0) {
+        stderr(
+          `No release commit was created — the release failed before the commit step.\n` +
+            `The following files were written and may be dirty in your working tree:\n\n` +
+            log.filesModified.map((f) => `  ${f}`).join('\n') +
+            `\n\nDiscard them with:\n\n` +
+            `  git checkout -- ${log.filesModified.join(' ')}\n`,
+        );
+      } else {
+        stderr(
+          'Error: transaction log is missing `bumpCommitSha` and lists no files.\n' +
+            'The log is incomplete and undo cannot run automatically.\n',
+        );
+      }
+      return { exitCode: 1 };
+    }
+
+    // 4. Refuse if the working tree is dirty.
     if (!(await isClean({ cwd }))) {
       stderr(
         'Error: working tree has uncommitted changes.\n' +
           'Commit or stash your changes before running undo.\n',
-      );
-      return { exitCode: 1 };
-    }
-
-    // 4. The transaction log must name the commit we're undoing.
-    if (!log.bumpCommitSha) {
-      stderr(
-        'Error: transaction log is missing `bumpCommitSha`.\n' +
-          'The log is incomplete and undo cannot run automatically.\n',
       );
       return { exitCode: 1 };
     }

@@ -371,6 +371,35 @@ describe('executeRelease', () => {
     expect(log!.pushed).toBe(false);
   });
 
+  // If the commit step fails (e.g. a rejecting pre-commit hook), the files
+  // are dirty on disk with no commit to point at. The log must still be
+  // written so `releasewise undo` can offer a `git checkout --` recipe.
+  it('writes a transaction log with bumpCommitSha: null when the commit step fails', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+    // Install a pre-commit hook that rejects every commit. `gitCommit`
+    // bypasses the gpgsign config but honors hooks under .git/hooks.
+    const hookPath = join(fx.dir, '.git', 'hooks', 'pre-commit');
+    fx.writeFile(
+      '.git/hooks/pre-commit',
+      '#!/bin/sh\necho "rejected by hook" >&2\nexit 1\n',
+    );
+    await $`chmod +x ${hookPath}`.quiet();
+
+    const plan = buildPlan();
+    await expect(
+      executeRelease({ plan, config: config(), cwd: fx.dir, noPush: true }),
+    ).rejects.toMatchObject({ code: 'ERR_GIT_COMMIT_FAILED' });
+
+    const log = await readTransactionLog(fx.dir);
+    expect(log).not.toBeNull();
+    expect(log!.bumpCommitSha).toBeNull();
+    expect(log!.tagName).toBeNull();
+    expect(log!.pushed).toBe(false);
+    expect(log!.filesModified).toContain('package.json');
+    expect(log!.filesModified).toContain('CHANGELOG.md');
+  });
+
   // The log file is a single snapshot — the latest write wins. A regression
   // here would mean multiple successive writes accumulated in the file
   // (corrupt JSON) instead of overwriting.

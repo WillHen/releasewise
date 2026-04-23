@@ -124,8 +124,10 @@ describe('runUndo', () => {
     expect(captured.stdout).toContain('Tag deleted:    (none)');
   });
 
-  it('errors when bumpCommitSha is null (malformed transaction log)', async () => {
-    const { deps, captured } = makeDeps(sampleLog({ bumpCommitSha: null }));
+  it('errors when bumpCommitSha is null and no files are recorded (malformed log)', async () => {
+    const { deps, captured } = makeDeps(
+      sampleLog({ bumpCommitSha: null, filesModified: [] }),
+    );
     const result = await runUndo(deps);
 
     expect(result.exitCode).toBe(1);
@@ -133,6 +135,45 @@ describe('runUndo', () => {
     // Nothing was touched.
     expect(captured.deletedTags).toEqual([]);
     expect(captured.resetRefs).toEqual([]);
+  });
+
+  // When a release fails before the commit step, files have been written
+  // but no commit exists. Print a `git checkout --` recipe instead of
+  // touching the working tree so unrelated edits aren't blown away.
+  it('prints a git checkout recipe when bumpCommitSha is null but files were written', async () => {
+    const { deps, captured } = makeDeps(
+      sampleLog({
+        bumpCommitSha: null,
+        tagName: null,
+        filesModified: ['package.json', 'CHANGELOG.md'],
+      }),
+    );
+    const result = await runUndo(deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain('No release commit was created');
+    expect(captured.stderr).toContain('package.json');
+    expect(captured.stderr).toContain('CHANGELOG.md');
+    expect(captured.stderr).toContain(
+      'git checkout -- package.json CHANGELOG.md',
+    );
+    // Did not touch git state.
+    expect(captured.deletedTags).toEqual([]);
+    expect(captured.resetRefs).toEqual([]);
+  });
+
+  // The recipe path must run regardless of working-tree state — the dirty
+  // files listed in the log are exactly what we're undoing.
+  it('prints the recipe even when the working tree is dirty', async () => {
+    const { deps, captured } = makeDeps(
+      sampleLog({ bumpCommitSha: null, tagName: null }),
+      { isClean: async () => false },
+    );
+    const result = await runUndo(deps);
+
+    expect(result.exitCode).toBe(1);
+    expect(captured.stderr).toContain('No release commit was created');
+    expect(captured.stderr).not.toContain('uncommitted changes');
   });
 
   it('errors cleanly when the release commit has no parent (root commit)', async () => {
