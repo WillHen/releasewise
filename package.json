@@ -46,7 +46,7 @@
     "@anthropic-ai/sdk": "^0.30.0",
     "@google/genai": "^0.3.0",
     "citty": "^0.2.2",
-    "openai": "^4.70.0",
+    "openai": "^6.34.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
