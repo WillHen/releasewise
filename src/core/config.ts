@@ -73,9 +73,9 @@ export const configSchema = z.object({
   $schema: z.string().optional(),
   projectName: z.string().min(1).optional(),
   commitMode: commitModeSchema.default('mixed'),
-  ai: aiConfigSchema.default({}),
-  changelog: changelogConfigSchema.default({}),
-  release: releaseConfigSchema.default({}),
+  ai: aiConfigSchema.prefault({}),
+  changelog: changelogConfigSchema.prefault({}),
+  release: releaseConfigSchema.prefault({}),
   language: z.string().default('en'),
 });
 
