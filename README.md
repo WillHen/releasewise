@@ -102,6 +102,7 @@ releasewise release --pre beta --yes  # pre-release: 1.0.0-beta.0
 | `--estimate`                       | Print token/cost estimate and exit                          |
 | `--json`                           | Structured JSON output                                      |
 | `--no-ai`                          | Skip AI, use template-based notes                           |
+| `--no-diff`                        | Send commit messages but not the diff body to the AI        |
 | `--no-github-release`              | Skip GitHub Release creation                                |
 | `--quiet`                          | Suppress step logs and warnings                             |
 | `--verbose`                        | Verbose logging with debug detail                           |
@@ -192,6 +193,56 @@ releasewise doctor
 3. `.releasewise.local.json` (gitignored — for local-only overrides)
 
 Never store API keys in the committed `.releasewise.json`.
+
+## Privacy: what gets sent to the AI provider
+
+By default, `releasewise release` sends two things to your configured AI
+provider when generating notes:
+
+1. The list of commits in the release range — subject lines and message bodies.
+2. The unified `git diff` for the release range, after lockfiles, build
+   output, and oversize files are dropped to fit `ai.maxDiffTokens`.
+
+For repos with regulated data (HIPAA, PCI), licensed third-party code, or
+unpatented IP that cannot leave the organization, the diff path is the
+risk. There are four ways to constrain it, from coarsest to most granular:
+
+| Control                                                    | What it does                                                                                                                              |
+| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--no-ai` / `releasewise release --no-ai`                  | Skip the AI entirely. Notes are produced from commit messages alone via the deterministic template.                                       |
+| `ai.sendDiff: false` (or `--no-diff`)                      | Keep AI-generated notes, but withhold the diff body. Only commit subjects/bodies are sent. Quality depends on commit-message hygiene.     |
+| `ai.redactPaths: ["src/secrets/**", "vendor/licensed/**"]` | Glob patterns whose files (and headers) are stripped from the diff before truncation, regardless of size. Other paths are still sent.     |
+| `ai.baseUrl: "https://ai.internal/v1"`                     | Route the SDK to an approved private gateway / proxy / mirror instead of the public `api.<vendor>.com` endpoint. Works for all providers. |
+
+Example `.releasewise.json` for a regulated repo that wants AI-written
+notes without sending the working tree to a public LLM endpoint:
+
+```json
+{
+  "ai": {
+    "provider": "anthropic",
+    "sendDiff": false,
+    "redactPaths": ["src/customer-data/**", "vendor/licensed/**"],
+    "baseUrl": "https://ai-gateway.internal/v1"
+  }
+}
+```
+
+The preview (`releasewise release` with no flags) shows what was withheld:
+
+```
+Diff: 12031 -> 412 tokens (truncated)
+  dropped: package-lock.json
+  redacted (privacy): src/customer-data/profile.ts
+
+Warnings:
+  ! 1 file(s) redacted from the AI payload by ai.redactPaths.
+  ! ai.sendDiff is false — diff body withheld from the AI provider. Release notes are based on commit messages only.
+```
+
+`--no-diff` only flips an explicit `true` to `false` for that invocation;
+a config-file `sendDiff: false` is sticky and cannot be re-enabled by
+omitting the flag.
 
 ## CI/CD
 

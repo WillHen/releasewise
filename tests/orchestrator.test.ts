@@ -636,3 +636,99 @@ describe('collectReleaseInputs — integration with git fixture', () => {
     expect(result.existingChangelog).toBe(existing);
   });
 });
+
+// --------- planRelease: privacy controls ---------
+
+describe('planRelease — ai.sendDiff and ai.redactPaths', () => {
+  it('withholds the diff body from the AI when ai.sendDiff is false', async () => {
+    let receivedUser = '';
+    const provider = fakeProvider((req) => {
+      receivedUser = req.user;
+      return '### Added\n- AI bullet';
+    });
+
+    const cfg = configWith();
+    cfg.ai.sendDiff = false;
+
+    const plan = await planRelease({
+      inputs: inputs({
+        rawDiff:
+          'diff --git a/src/secret.ts b/src/secret.ts\n+confidential = 42',
+        commits: [commit({ shortSha: 'aa', subject: 'feat: add secret' })],
+      }),
+      config: cfg,
+      provider,
+      date: '2026-04-11',
+    });
+
+    // The diff body must not appear in the AI prompt.
+    expect(receivedUser).not.toContain('confidential');
+    expect(receivedUser).not.toContain('src/secret.ts');
+    // The plan still surfaces the original diff stats so users can see
+    // what would have been sent if the gate were open.
+    expect(plan.warnings.join(' ')).toMatch(/sendDiff is false/);
+  });
+
+  it('does not warn about sendDiff when no provider is configured', async () => {
+    const cfg = configWith();
+    cfg.ai.sendDiff = false;
+
+    const plan = await planRelease({
+      inputs: inputs({
+        commits: [commit({ shortSha: 'aa', subject: 'feat: x' })],
+      }),
+      config: cfg,
+      provider: null,
+      date: '2026-04-11',
+    });
+    // When the AI is off entirely, the sendDiff toggle is irrelevant —
+    // no need to scare the user with a warning that doesn't apply.
+    expect(plan.warnings.join(' ')).not.toMatch(/sendDiff/);
+  });
+
+  it('threads ai.redactPaths through to the truncator', async () => {
+    let receivedUser = '';
+    const provider = fakeProvider((req) => {
+      receivedUser = req.user;
+      return '### Added\n- AI bullet';
+    });
+
+    const cfg = configWith();
+    cfg.ai.redactPaths = ['src/secrets/**'];
+
+    const rawDiff = [
+      'diff --git a/src/a.ts b/src/a.ts',
+      'index 0000000..1111111 100644',
+      '--- a/src/a.ts',
+      '+++ b/src/a.ts',
+      '@@ -0,0 +1,1 @@',
+      '+public = 1',
+      'diff --git a/src/secrets/keys.ts b/src/secrets/keys.ts',
+      'index 0000000..1111111 100644',
+      '--- a/src/secrets/keys.ts',
+      '+++ b/src/secrets/keys.ts',
+      '@@ -0,0 +1,1 @@',
+      '+SECRET = "shh"',
+    ].join('\n');
+
+    const plan = await planRelease({
+      inputs: inputs({
+        rawDiff,
+        commits: [commit({ shortSha: 'aa', subject: 'feat: add stuff' })],
+      }),
+      config: cfg,
+      provider,
+      date: '2026-04-11',
+    });
+
+    expect(plan.truncatedDiff.redactedFiles).toEqual(['src/secrets/keys.ts']);
+    expect(plan.truncatedDiff.droppedFiles).toContain('src/secrets/keys.ts');
+    // Neither the secret content nor the redacted path leak into the
+    // payload that ultimately reaches the AI.
+    expect(receivedUser).not.toContain('SECRET');
+    expect(receivedUser).not.toContain('src/secrets/keys.ts');
+    // The non-redacted file is still there.
+    expect(receivedUser).toContain('src/a.ts');
+    expect(plan.warnings.join(' ')).toMatch(/redacted from the AI payload/);
+  });
+});

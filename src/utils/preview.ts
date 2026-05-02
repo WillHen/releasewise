@@ -36,6 +36,13 @@ export interface JsonPreviewDiff {
   finalTokens: number;
   truncated: boolean;
   droppedFiles: string[];
+  /**
+   * Files dropped by the privacy redaction pass (`ai.redactPaths`).
+   * Always a subset of `droppedFiles`; surfaced separately so callers
+   * can distinguish "removed for confidentiality" from "removed to fit
+   * the token budget".
+   */
+  redactedFiles: string[];
 }
 
 export interface JsonPreviewNotes {
@@ -109,6 +116,7 @@ export function formatJsonPreview(
       finalTokens: plan.truncatedDiff.finalTokens,
       truncated: plan.truncatedDiff.truncated,
       droppedFiles: plan.truncatedDiff.droppedFiles,
+      redactedFiles: plan.truncatedDiff.redactedFiles,
     },
     notes: {
       title: plan.notes.title,
@@ -265,8 +273,17 @@ function renderDiffSummary(plan: ReleasePlan): string[] {
       d.truncated ? ' (truncated)' : ''
     }`,
   ];
-  if (d.droppedFiles.length > 0) {
-    lines.push(`  dropped: ${d.droppedFiles.join(', ')}`);
+  // Show budget-driven drops and privacy redactions separately so users
+  // can see at a glance whether sensitive paths were excluded as
+  // intended versus merely trimmed to fit the token cap.
+  const budgetDropped = d.droppedFiles.filter(
+    (p) => !d.redactedFiles.includes(p),
+  );
+  if (budgetDropped.length > 0) {
+    lines.push(`  dropped: ${budgetDropped.join(', ')}`);
+  }
+  if (d.redactedFiles.length > 0) {
+    lines.push(`  redacted (privacy): ${d.redactedFiles.join(', ')}`);
   }
   return lines;
 }

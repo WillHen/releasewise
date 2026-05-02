@@ -72,6 +72,13 @@ export interface RunReleaseArgs {
    */
   yes?: boolean;
   noAi?: boolean;
+  /**
+   * Per-invocation override for `ai.sendDiff`. When true, the diff body
+   * is not sent to the AI provider — release notes are generated from
+   * commit messages only. Use this for one-off runs in repos where the
+   * working tree must not leave the org.
+   */
+  noDiff?: boolean;
   verbose?: boolean;
 }
 
@@ -134,8 +141,21 @@ export async function runRelease(
     const fromRef = parseFromArg(args.from);
     const tone = parseToneArg(args.tone);
 
-    // 3. Load config.
-    const loaded = loadConfig({ cwd });
+    // 3. Load config. `--no-diff` is a per-invocation override of
+    //    `ai.sendDiff`: it flips the runtime config to false but never
+    //    flips an explicit `false` back to true, so a user who hardcoded
+    //    `sendDiff: false` in `.releasewise.json` cannot accidentally
+    //    leak the diff by forgetting the flag.
+    const rawLoaded = loadConfig({ cwd });
+    const loaded: typeof rawLoaded = args.noDiff
+      ? {
+          ...rawLoaded,
+          config: {
+            ...rawLoaded.config,
+            ai: { ...rawLoaded.config.ai, sendDiff: false },
+          },
+        }
+      : rawLoaded;
 
     // 4. Build the provider (or null for --no-ai).
     let provider: AIProvider | null = null;
@@ -395,6 +415,13 @@ export const releaseCommand = defineCommand({
         'Use AI for classification and notes (--no-ai for template fallback)',
       default: true,
     },
+    diff: {
+      type: 'boolean',
+      description:
+        'Send the unified diff to the AI provider (--no-diff to send only ' +
+        'commit messages, for repos with regulated data or sensitive IP)',
+      default: true,
+    },
     'github-release': {
       type: 'boolean',
       description:
@@ -433,6 +460,7 @@ export const releaseCommand = defineCommand({
       json: Boolean(args.json),
       yes: Boolean(args.yes),
       noAi: args.ai === false,
+      noDiff: args.diff === false,
       verbose: Boolean(args.verbose),
     });
     if (result.exitCode !== 0) {

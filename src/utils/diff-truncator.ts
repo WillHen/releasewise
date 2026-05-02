@@ -10,6 +10,12 @@
  * Strategy, in order. Each tier is tried only if the previous one didn't
  * get us under budget:
  *
+ *   Tier -1 — privacy redaction (unconditional)
+ *     If the caller passed `redactPaths`, drop any file whose path
+ *     matches one of those globs first, regardless of budget. These
+ *     files NEVER reach the AI — this is the carve-out for regulated
+ *     data, licensed third-party code, or sensitive IP.
+ *
  *   Tier 0 — fast path
  *     If the whole diff is already under budget, return it unchanged.
  *
@@ -35,6 +41,8 @@
  * via `estimateTokens` (see token-estimator.ts). We only need to be right
  * within ~20%, so this is fine.
  */
+import { Glob } from 'bun';
+
 import { estimateTokens } from './token-estimator.ts';
 
 // --------- Types ---------
@@ -50,8 +58,25 @@ export interface TruncatedDiff {
   truncated: boolean;
   /** Paths of files whose bodies were dropped (any tier). */
   droppedFiles: string[];
+  /**
+   * Paths dropped specifically by `redactPaths` privacy redaction.
+   * These were excluded for confidentiality, not to fit budget; surface
+   * them separately so the preview can distinguish the two reasons.
+   */
+  redactedFiles: string[];
   /** Human-readable notes about what was dropped and why. */
   notes: string[];
+}
+
+export interface TruncateDiffOptions {
+  /**
+   * Glob patterns (Bun glob syntax) for paths whose diff content must
+   * never be sent to the AI. Matched files are dropped from the diff
+   * before any budget-driven truncation, regardless of size. The header
+   * line is also removed — the model is told only that "N file(s) were
+   * redacted" via the returned notes, not which paths.
+   */
+  redactPaths?: string[];
 }
 
 // --------- Noise list ---------
@@ -95,6 +120,24 @@ function isNoisyPath(path: string): boolean {
     if (NOISE_DIR_SEGMENTS.has(seg)) return true;
   }
   return false;
+}
+
+/**
+ * Compile redact globs once per call. Returns a predicate that tests a
+ * file path against the set of patterns. Callers with no patterns get a
+ * predicate that always returns false, which folds out at call sites.
+ *
+ * Bun's `Glob` uses minimatch-style syntax: `*` matches a single path
+ * segment, `**` crosses segment boundaries, `?` is a single char,
+ * `[abc]` is a character class. This matches users' intuition coming
+ * from `.gitignore` / minimatch, so we don't reinvent a matcher.
+ */
+function buildRedactionMatcher(
+  patterns: string[] | undefined,
+): (path: string) => boolean {
+  if (!patterns || patterns.length === 0) return () => false;
+  const globs = patterns.map((p) => new Glob(p));
+  return (path: string) => globs.some((g) => g.match(path));
 }
 
 // --------- Parsing ---------
@@ -198,6 +241,7 @@ function joinDiff(preamble: string, files: { raw: string }[]): string {
 export function truncateDiff(
   diff: string,
   budgetTokens: number,
+  options: TruncateDiffOptions = {},
 ): TruncatedDiff {
   if (!Number.isFinite(budgetTokens) || budgetTokens <= 0) {
     throw new Error(
@@ -206,6 +250,47 @@ export function truncateDiff(
   }
 
   const originalTokens = estimateTokens(diff);
+  const isRedacted = buildRedactionMatcher(options.redactPaths);
+  const hasRedactPatterns =
+    (options.redactPaths?.length ?? 0) > 0 && diff.length > 0;
+
+  // Tier -1: privacy redaction. Runs before the fast path so a
+  // small-but-sensitive file is still removed when the rest of the
+  // diff would have fit unchanged. We have to split the diff to check.
+  if (hasRedactPatterns) {
+    const split = splitDiff(diff);
+    const redacted = split.files.filter((f) => isRedacted(f.path));
+    if (redacted.length > 0) {
+      const kept = split.files.filter((f) => !isRedacted(f.path));
+      const redactedPaths = redacted.map((f) => f.path);
+      const notes = redactedPaths.map((p) => `redacted (privacy): ${p}`);
+      const rebuilt = joinDiff(split.preamble, kept);
+      const rebuiltTokens = estimateTokens(rebuilt);
+      // If the privacy-stripped diff already fits, return it as-is.
+      // Otherwise fall through to the regular truncation tiers below,
+      // operating on the stripped diff so redacted paths can never
+      // re-enter via the working list.
+      if (rebuiltTokens <= budgetTokens) {
+        return {
+          content: rebuilt,
+          originalTokens,
+          finalTokens: rebuiltTokens,
+          truncated: true,
+          droppedFiles: [...redactedPaths],
+          redactedFiles: redactedPaths,
+          notes,
+        };
+      }
+      return truncateAfterRedaction({
+        preamble: split.preamble,
+        keptFiles: kept,
+        originalTokens,
+        budgetTokens,
+        redactedFiles: redactedPaths,
+        seedNotes: notes,
+      });
+    }
+  }
 
   // Tier 0: fast path.
   if (originalTokens <= budgetTokens) {
@@ -215,6 +300,7 @@ export function truncateDiff(
       finalTokens: originalTokens,
       truncated: false,
       droppedFiles: [],
+      redactedFiles: [],
       notes: [],
     };
   }
@@ -230,17 +316,43 @@ export function truncateDiff(
       finalTokens: originalTokens,
       truncated: false,
       droppedFiles: [],
+      redactedFiles: [],
       notes: ['diff has no file boundaries; nothing to truncate'],
     };
   }
 
-  const droppedFiles: string[] = [];
-  const notes: string[] = [];
+  return truncateAfterRedaction({
+    preamble,
+    keptFiles: files,
+    originalTokens,
+    budgetTokens,
+    redactedFiles: [],
+    seedNotes: [],
+  });
+}
+
+/**
+ * Run tiers 1-3 (noisy drop / stub bodies / drop whole files) on a
+ * pre-split diff. Factored out so the privacy-redaction path can reuse
+ * it after stripping out files that must never reach the AI.
+ */
+function truncateAfterRedaction(args: {
+  preamble: string;
+  keptFiles: DiffFile[];
+  originalTokens: number;
+  budgetTokens: number;
+  redactedFiles: string[];
+  seedNotes: string[];
+}): TruncatedDiff {
+  const { preamble, keptFiles, originalTokens, budgetTokens, redactedFiles } =
+    args;
+  const droppedFiles: string[] = [...redactedFiles];
+  const notes: string[] = [...args.seedNotes];
 
   // Working list: we mutate this as we drop / stub files.
   // `raw` is what gets joined into the final diff.
   type WorkingFile = { path: string; raw: string; stubbed: boolean };
-  let working: WorkingFile[] = files.map((f) => ({
+  let working: WorkingFile[] = keptFiles.map((f) => ({
     path: f.path,
     raw: f.raw,
     stubbed: false,
@@ -264,6 +376,7 @@ export function truncateDiff(
       working,
       originalTokens,
       droppedFiles,
+      redactedFiles,
       notes,
     });
   }
@@ -291,6 +404,7 @@ export function truncateDiff(
       working,
       originalTokens,
       droppedFiles,
+      redactedFiles,
       notes,
     });
   }
@@ -329,6 +443,7 @@ export function truncateDiff(
     finalTokens: estimateTokens(bodyWithFooter),
     truncated: true,
     droppedFiles,
+    redactedFiles,
     notes,
   };
 }
@@ -338,6 +453,7 @@ function finalize(args: {
   working: { raw: string }[];
   originalTokens: number;
   droppedFiles: string[];
+  redactedFiles: string[];
   notes: string[];
 }): TruncatedDiff {
   const content = joinDiff(args.preamble, args.working);
@@ -347,6 +463,7 @@ function finalize(args: {
     finalTokens: estimateTokens(content),
     truncated: true,
     droppedFiles: args.droppedFiles,
+    redactedFiles: args.redactedFiles,
     notes: args.notes,
   };
 }

@@ -50,6 +50,24 @@ export const aiConfigSchema = z.object({
   apiKey: z.string().optional(),
   /** Optional custom base URL (e.g. Groq, Azure OpenAI, proxies). */
   baseUrl: z.string().url().optional(),
+  /**
+   * If `false`, the unified diff body is NOT sent to the AI provider —
+   * only commit subjects and bodies are. Use this for repos with
+   * regulated data (HIPAA, PCI), licensed third-party code, or
+   * unpatented IP that cannot leave the organization. Notes generated
+   * in this mode are based on commit messages alone, so the quality
+   * depends on how descriptive the commit messages are.
+   */
+  sendDiff: z.boolean().default(true),
+  /**
+   * Glob patterns for paths whose diff content must NEVER be sent to
+   * the AI provider, regardless of `sendDiff`. Matching files are
+   * dropped from the diff before truncation and listed under
+   * `droppedFiles`. Patterns use Bun's glob syntax (`*`, `**`, `?`,
+   * `[abc]`); they're matched against the post-image path on the `b`
+   * side of the diff (e.g. `src/secrets/keys.ts`).
+   */
+  redactPaths: z.array(z.string().min(1)).default([]),
 });
 
 export const changelogConfigSchema = z.object({

@@ -59,6 +59,7 @@ function buildPlan(overrides?: Partial<ReleasePlan>): ReleasePlan {
     truncatedDiff: {
       content: '',
       droppedFiles: [],
+      redactedFiles: [],
       originalTokens: 0,
       finalTokens: 0,
       truncated: false,

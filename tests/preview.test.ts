@@ -45,6 +45,7 @@ function plan(partial: Partial<ReleasePlan> = {}): ReleasePlan {
       finalTokens: 100,
       truncated: false,
       droppedFiles: [],
+      redactedFiles: [],
       notes: [],
     },
     remote: github,
@@ -160,6 +161,7 @@ describe('formatJsonPreview', () => {
           finalTokens: 1000,
           truncated: true,
           droppedFiles: ['package-lock.json'],
+          redactedFiles: [],
           notes: ['dropped package-lock.json'],
         },
       }),
@@ -169,6 +171,7 @@ describe('formatJsonPreview', () => {
       finalTokens: 1000,
       truncated: true,
       droppedFiles: ['package-lock.json'],
+      redactedFiles: [],
     });
     // Diff body must NOT appear anywhere in the JSON output.
     expect(JSON.stringify(out)).not.toContain('diff body not included');
@@ -335,6 +338,7 @@ describe('formatHumanPreview', () => {
           finalTokens: 1200,
           truncated: true,
           droppedFiles: ['package-lock.json', 'dist/bundle.js'],
+          redactedFiles: [],
           notes: [],
         },
       }),

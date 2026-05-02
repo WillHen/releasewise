@@ -36,7 +36,14 @@ export function getProvider(opts: GetProviderOptions): AIProvider {
     case 'anthropic': {
       const client =
         opts.anthropicClient ??
-        (new Anthropic({ apiKey }) as unknown as AnthropicClient);
+        (new Anthropic({
+          apiKey,
+          // Forward `ai.baseUrl` so users routing through a private /
+          // approved Anthropic gateway (e.g. an internal proxy or a
+          // Bedrock-style endpoint mirror) can keep diffs inside their
+          // network boundary instead of hitting api.anthropic.com.
+          ...(config.ai.baseUrl ? { baseURL: config.ai.baseUrl } : {}),
+        }) as unknown as AnthropicClient);
       return createAnthropicProvider({
         client,
         model: config.ai.model,

@@ -299,15 +299,48 @@ export async function planRelease(
     opts.prerelease,
   );
 
-  // 6) Truncate diff.
-  const truncatedDiff = truncateDiff(inputs.rawDiff, config.ai.maxDiffTokens);
+  // 6) Truncate diff. `redactPaths` strips matching files before any
+  //    budget-driven truncation — those paths never reach the AI.
+  const truncatedDiff = truncateDiff(inputs.rawDiff, config.ai.maxDiffTokens, {
+    redactPaths: config.ai.redactPaths,
+  });
+
+  // 6b) Privacy mode. If `ai.sendDiff` is false, the AI sees commit
+  //     messages but not the diff body. Required for repos with
+  //     regulated data, licensed third-party code, or unpatented IP
+  //     where exfiltrating the working tree to a third-party LLM is
+  //     not acceptable. Warnings here are surfaced in the preview so
+  //     users see what was withheld.
+  //
+  //     `diffDroppedFiles` is shown to the AI as "(some files omitted)"
+  //     context — but the redacted paths themselves may be sensitive
+  //     (e.g. "src/customer-data/..."), so we strip them out and only
+  //     pass through paths dropped for budget reasons.
+  const aiDiff = config.ai.sendDiff ? truncatedDiff.content : '';
+  const aiDiffDroppedFiles = config.ai.sendDiff
+    ? truncatedDiff.droppedFiles.filter(
+        (p) => !truncatedDiff.redactedFiles.includes(p),
+      )
+    : [];
+  if (!config.ai.sendDiff && provider !== null) {
+    warnings.push(
+      'ai.sendDiff is false — diff body withheld from the AI provider. ' +
+        'Release notes are based on commit messages only.',
+    );
+  }
+  if (truncatedDiff.redactedFiles.length > 0 && provider !== null) {
+    warnings.push(
+      `${truncatedDiff.redactedFiles.length} file(s) redacted from the AI ` +
+        `payload by ai.redactPaths.`,
+    );
+  }
 
   // 7) Release notes (AI path or template fallback).
   const tone = opts.tone ?? config.release.tone;
   const notes = await generateReleaseNotes({
     commits: inputs.commits,
-    diff: truncatedDiff.content,
-    diffDroppedFiles: truncatedDiff.droppedFiles,
+    diff: aiDiff,
+    diffDroppedFiles: aiDiffDroppedFiles,
     version: nextVersion,
     previousVersion: inputs.previousVersion,
     date,

@@ -198,3 +198,71 @@ describe('truncateDiff — tier 3 drop whole files', () => {
     expect(result.notes.some((n) => /additional file/.test(n))).toBe(true);
   });
 });
+
+// --------- Tier -1: privacy redaction ---------
+
+describe('truncateDiff — privacy redaction', () => {
+  it('drops files matched by redactPaths even when the diff fits the budget', () => {
+    const src = fileChunk('src/a.ts', 3);
+    const secret = fileChunk('src/secrets/keys.ts', 3);
+    const diff = joinChunks(src, secret);
+
+    // Plenty of budget — without redaction the fast path returns unchanged.
+    const result = truncateDiff(diff, 100_000, {
+      redactPaths: ['src/secrets/**'],
+    });
+
+    expect(result.redactedFiles).toEqual(['src/secrets/keys.ts']);
+    expect(result.droppedFiles).toContain('src/secrets/keys.ts');
+    expect(result.truncated).toBe(true);
+    expect(result.content).toContain('src/a.ts');
+    // The redacted file's content (and even its header) must not leak.
+    expect(result.content).not.toContain('src/secrets/keys.ts');
+    expect(result.content).not.toContain('line 0 of src/secrets/keys.ts');
+    expect(result.notes.some((n) => /redacted \(privacy\)/.test(n))).toBe(true);
+  });
+
+  it('matches redactPaths globs against deep nested files', () => {
+    const a = fileChunk('app/legal/license.ts', 5);
+    const b = fileChunk('app/public/index.ts', 5);
+    const diff = joinChunks(a, b);
+
+    const result = truncateDiff(diff, 100_000, {
+      redactPaths: ['**/legal/**'],
+    });
+
+    expect(result.redactedFiles).toEqual(['app/legal/license.ts']);
+    expect(result.content).toContain('app/public/index.ts');
+    expect(result.content).not.toContain('app/legal');
+  });
+
+  it('keeps redaction in effect when budget pressure also triggers truncation', () => {
+    const src = fileChunk('src/a.ts', 3);
+    const secret = fileChunk('src/secrets/keys.ts', 5);
+    const huge = fileChunk('src/huge.ts', 500);
+    const diff = joinChunks(src, secret, huge);
+
+    // Tight budget: huge.ts will need to be stubbed, but secret must
+    // still be removed entirely (not stubbed) because of the privacy
+    // pass — a stubbed header still leaks the path.
+    const budget = estimateTokens(src) + 100;
+    const result = truncateDiff(diff, budget, {
+      redactPaths: ['src/secrets/**'],
+    });
+
+    expect(result.redactedFiles).toEqual(['src/secrets/keys.ts']);
+    expect(result.content).not.toContain('src/secrets/keys.ts');
+    // The huge file is allowed to be stubbed (header preserved).
+    expect(result.droppedFiles).toContain('src/huge.ts');
+  });
+
+  it('returns empty redactedFiles when no patterns match', () => {
+    const src = fileChunk('src/a.ts', 3);
+    const result = truncateDiff(src, 100_000, {
+      redactPaths: ['internal/**'],
+    });
+    expect(result.redactedFiles).toEqual([]);
+    expect(result.truncated).toBe(false);
+    expect(result.content).toBe(src);
+  });
+});

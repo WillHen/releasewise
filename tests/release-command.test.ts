@@ -55,6 +55,7 @@ function fakePlan(partial: Partial<ReleasePlan> = {}): ReleasePlan {
       finalTokens: 100,
       truncated: false,
       droppedFiles: [],
+      redactedFiles: [],
       notes: [],
     },
     remote: github,
@@ -449,6 +450,40 @@ describe('runRelease — config + warnings', () => {
     const result = await runRelease({}, deps);
     expect(result.exitCode).toBe(1);
     expect(sinks.stderr).toContain('No .releasewise.json');
+  });
+
+  it('flips ai.sendDiff to false in the runtime config when --no-diff is set', async () => {
+    let receivedConfig: Config | undefined;
+    const { deps } = buildDeps({
+      planReleaseImpl: async (o) => {
+        receivedConfig = o.config;
+        return fakePlan();
+      },
+    });
+    const result = await runRelease({ noDiff: true }, deps);
+    expect(result.exitCode).toBe(0);
+    expect(receivedConfig?.ai.sendDiff).toBe(false);
+  });
+
+  it('does not flip ai.sendDiff back to true when --no-diff is omitted but the file says false', async () => {
+    let receivedConfig: Config | undefined;
+    // Simulate `.releasewise.json` setting sendDiff: false. The CLI must
+    // not silently re-enable it just because the user forgot the flag —
+    // the config-level opt-out is the durable contract.
+    const baseLoaded = fakeLoaded();
+    baseLoaded.config = {
+      ...baseLoaded.config,
+      ai: { ...baseLoaded.config.ai, sendDiff: false },
+    };
+    const { deps } = buildDeps({
+      loadConfigImpl: () => baseLoaded,
+      planReleaseImpl: async (o) => {
+        receivedConfig = o.config;
+        return fakePlan();
+      },
+    });
+    await runRelease({}, deps);
+    expect(receivedConfig?.ai.sendDiff).toBe(false);
   });
 
   it('merges loader warnings in front of plan warnings', async () => {
