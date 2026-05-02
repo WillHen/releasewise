@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-05-02
+
+### Added
+
+- `ai.sendDiff` config field and `--no-diff` CLI flag to withhold the unified diff from the AI provider, sending only commit messages — for repos with regulated data (HIPAA, PCI), licensed third-party code, or unpatented IP
+- `ai.redactPaths` config field accepting Bun glob patterns; matched files are stripped from the diff (including their headers) before the AI sees it, so neither content nor path names leak
+- `ai.baseUrl` is now forwarded to the Anthropic SDK, enabling routing through a private or approved gateway (behavior already existed for OpenAI/Groq/Gemini)
+- Preview output now lists privacy-redacted files separately from budget-dropped files under a `redacted (privacy):` label, and the JSON preview exposes a `redactedFiles` field alongside `droppedFiles`
+- `--verbose` flag on `releasewise release` to print the full error cause chain with stack traces when a step fails
+
+### Fixed
+
+- `releasewise undo` now has recovery information available even when a pre-commit hook rejects the commit after `package.json` and `CHANGELOG.md` were already written — the transaction log is persisted with `bumpCommitSha: null` immediately after the file writes, and the undo command prints a `git checkout --` recipe for the dirty paths
+- `releasewise undo` now has recovery information available when a push or GitHub Release step fails after a successful local commit and tag — the transaction log is written incrementally so partial failures leave an accurate record on disk
+
 ## [0.3.4] - 2026-04-18
 
 ### Fixed
