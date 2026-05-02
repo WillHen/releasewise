@@ -153,7 +153,7 @@ releasewise doctor
   "commitMode": "mixed",
   "ai": {
     "provider": "anthropic",
-    "model": "claude-haiku-4-5",
+    "model": "claude-sonnet-4-6",
     "maxDiffTokens": 8000
   },
   "changelog": {
@@ -181,10 +181,12 @@ releasewise doctor
 
 | Provider              | Env var             | Default model             |
 | --------------------- | ------------------- | ------------------------- |
-| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-haiku-4-5`        |
+| `anthropic` (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6`       |
 | `openai`              | `OPENAI_API_KEY`    | `gpt-4o-mini`             |
 | `groq`                | `GROQ_API_KEY`      | `llama-3.3-70b-versatile` |
 | `gemini`              | `GEMINI_API_KEY`    | `gemini-2.0-flash`        |
+
+The Anthropic default is Sonnet, not Haiku: dogfood runs found Haiku 4.5 leaks internal module names and CI bullets into release notes despite explicit prompt guidance, while Sonnet 4.6 produces clean output. The cost delta is cents per release at this workload. Override `ai.model` in `.releasewise.json` if you want a different trade-off.
 
 ### API key resolution (highest priority first)
 
