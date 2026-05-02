@@ -686,6 +686,35 @@ describe('planRelease — ai.sendDiff and ai.redactPaths', () => {
     expect(plan.warnings.join(' ')).not.toMatch(/sendDiff/);
   });
 
+  it('does not warn about redactPaths when no provider is configured', async () => {
+    const cfg = configWith();
+    cfg.ai.redactPaths = ['src/secrets/**'];
+
+    const rawDiff = [
+      'diff --git a/src/secrets/keys.ts b/src/secrets/keys.ts',
+      'index 0000000..1111111 100644',
+      '--- a/src/secrets/keys.ts',
+      '+++ b/src/secrets/keys.ts',
+      '@@ -0,0 +1,1 @@',
+      '+SECRET = "shh"',
+    ].join('\n');
+
+    const plan = await planRelease({
+      inputs: inputs({
+        rawDiff,
+        commits: [commit({ shortSha: 'aa', subject: 'feat: x' })],
+      }),
+      config: cfg,
+      provider: null,
+      date: '2026-04-11',
+    });
+    // The redaction still happens (truncatedDiff records it for the
+    // preview) but no warning is added — when the AI is off, the
+    // redaction had no payload to scrub anyway.
+    expect(plan.truncatedDiff.redactedFiles).toEqual(['src/secrets/keys.ts']);
+    expect(plan.warnings.join(' ')).not.toMatch(/redacted from the AI payload/);
+  });
+
   it('threads ai.redactPaths through to the truncator', async () => {
     let receivedUser = '';
     const provider = fakeProvider((req) => {

@@ -72,9 +72,14 @@ export interface TruncateDiffOptions {
   /**
    * Glob patterns (Bun glob syntax) for paths whose diff content must
    * never be sent to the AI. Matched files are dropped from the diff
-   * before any budget-driven truncation, regardless of size. The header
-   * line is also removed — the model is told only that "N file(s) were
-   * redacted" via the returned notes, not which paths.
+   * before any budget-driven truncation, regardless of size — both the
+   * body and the `diff --git` header are stripped from `content`.
+   *
+   * The matched paths still appear in the returned `redactedFiles` and
+   * `notes` so the caller can render them in a preview to the user;
+   * it's the caller's job to decide what to forward to the AI (the
+   * orchestrator filters them out of the AI-facing "files omitted"
+   * hint).
    */
   redactPaths?: string[];
 }
