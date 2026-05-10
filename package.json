@@ -43,7 +43,7 @@
   "homepage": "https://github.com/WillHen/releasewise",
   "license": "MIT",
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.92.0",
+    "@anthropic-ai/sdk": "^0.95.1",
     "@google/genai": "^1.50.1",
     "citty": "^0.2.2",
     "openai": "^6.34.0",
