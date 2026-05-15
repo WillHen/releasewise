@@ -146,4 +146,78 @@ describe('enrichPrLinks — non-matches', () => {
       'a lonely ` backtick\nreal ref [#9](https://github.com/acme/widgets/pull/9)',
     );
   });
+
+  it('does not link refs inside a triple-backtick fenced block', () => {
+    // AI-generated release notes often include diffs or code samples
+    // where a literal `#N` appears. Those must not be rewritten.
+    const input = [
+      'Highlights below:',
+      '',
+      '```ts',
+      '// fixture for issue #999',
+      'const id = "#42";',
+      '```',
+    ].join('\n');
+    expect(enrichPrLinks(input, github)).toBe(input);
+  });
+
+  it('links refs outside a fenced block while leaving refs inside alone', () => {
+    const input = [
+      'Closes #1 — see snippet:',
+      '',
+      '```',
+      'example #2 inside fence',
+      '```',
+      '',
+      'Also fixes #3.',
+    ].join('\n');
+    const expected = [
+      'Closes [#1](https://github.com/acme/widgets/pull/1) — see snippet:',
+      '',
+      '```',
+      'example #2 inside fence',
+      '```',
+      '',
+      'Also fixes [#3](https://github.com/acme/widgets/pull/3).',
+    ].join('\n');
+    expect(enrichPrLinks(input, github)).toBe(expected);
+  });
+
+  it('handles multiple fenced blocks with refs between them', () => {
+    const input = [
+      '```',
+      'first #1',
+      '```',
+      'between #2',
+      '```ts',
+      'second #3',
+      '```',
+    ].join('\n');
+    const expected = [
+      '```',
+      'first #1',
+      '```',
+      'between [#2](https://github.com/acme/widgets/pull/2)',
+      '```ts',
+      'second #3',
+      '```',
+    ].join('\n');
+    expect(enrichPrLinks(input, github)).toBe(expected);
+  });
+
+  it('treats an inline triple-backtick span as a code span', () => {
+    const input = 'use ```#7``` literally, but link #8';
+    expect(enrichPrLinks(input, github)).toBe(
+      'use ```#7``` literally, but link [#8](https://github.com/acme/widgets/pull/8)',
+    );
+  });
+
+  it('still links a ref when a triple-backtick opener is never closed', () => {
+    // An unclosed fence falls through the first alternative; the ref on
+    // the same/later line is matched by the issue-ref alternative.
+    const input = 'stray ``` opener and #5';
+    expect(enrichPrLinks(input, github)).toBe(
+      'stray ``` opener and [#5](https://github.com/acme/widgets/pull/5)',
+    );
+  });
 });
