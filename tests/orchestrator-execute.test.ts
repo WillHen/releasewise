@@ -417,6 +417,84 @@ describe('executeRelease', () => {
     expect(() => JSON.parse(raw)).not.toThrow();
     expect(raw.match(/"timestamp":/g)).toHaveLength(1);
   });
+
+  // Regression: previously, --no-push silently suppressed the GitHub
+  // Release with no indication. Now the orchestrator returns a
+  // structured `skipped` result so the CLI can tell the user what
+  // happened and hand them a manual command to finish up after they
+  // push the tag themselves.
+  it('returns a skipped GitHub Release explaining the missing push when noPush is set', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+
+    const plan = buildPlan({
+      remote: {
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widgets',
+        webUrl: 'https://github.com/acme/widgets',
+      },
+    });
+
+    // Sentinel: if the orchestrator ever tries to actually create the
+    // release while push is disabled, this throws and fails the test.
+    const createGithubRelease = async () => {
+      throw new Error(
+        'createGithubRelease should not be called when noPush is true',
+      );
+    };
+
+    const result = await executeRelease({
+      plan,
+      config: config(),
+      cwd: fx.dir,
+      noPush: true,
+      createGithubRelease,
+    });
+
+    expect(result.pushed).toBe(false);
+    expect(result.githubRelease).not.toBeNull();
+    expect(result.githubRelease!.status).toBe('skipped');
+    if (result.githubRelease!.status === 'skipped') {
+      expect(result.githubRelease!.reason).toMatch(/push/i);
+      expect(result.githubRelease!.manualCommand).toContain('v1.0.0');
+      expect(result.githubRelease!.manualCommand).toContain('acme/widgets');
+    }
+  });
+
+  // The explicit opt-out paths (--no-github-release, or no remote at
+  // all) stay silent — the user already told us not to create one, so
+  // there is nothing to surface.
+  it('returns null githubRelease when the user explicitly opted out', async () => {
+    seedPackageJson();
+    await fx.commit('chore: init');
+
+    const plan = buildPlan({
+      remote: {
+        host: 'github.com',
+        owner: 'acme',
+        repo: 'widgets',
+        webUrl: 'https://github.com/acme/widgets',
+      },
+    });
+
+    const createGithubRelease = async () => {
+      throw new Error(
+        'createGithubRelease should not be called when noGithubRelease is true',
+      );
+    };
+
+    const result = await executeRelease({
+      plan,
+      config: config(),
+      cwd: fx.dir,
+      noPush: true,
+      noGithubRelease: true,
+      createGithubRelease,
+    });
+
+    expect(result.githubRelease).toBeNull();
+  });
 });
 
 // --------- Prerelease graduation E2E ---------
