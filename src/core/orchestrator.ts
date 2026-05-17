@@ -579,16 +579,23 @@ export async function executeRelease(
     await writeTransactionLog(cwd, log);
   }
 
-  // --- 6. GitHub Release (if enabled and pushed) ---
+  // --- 6. GitHub Release (if enabled) ---
+  //
+  // Three outcomes:
+  //   - User opted out (--no-github-release, createGithubRelease: false,
+  //     or no parsed remote) → silent skip, githubRelease stays null.
+  //   - Push was skipped but the user wanted a release → return a
+  //     structured `skipped` result so the CLI surfaces what happened and
+  //     hands the user a manual command to finish after they push.
+  //   - Otherwise → call the creator.
   const createRelease = opts.createGithubRelease ?? realCreateGithubRelease;
   let githubRelease: GithubReleaseResult | null = null;
-  const shouldCreateRelease =
-    shouldPush &&
+  const wantsRelease =
     !opts.noGithubRelease &&
     config.release.createGithubRelease &&
     plan.remote !== null;
 
-  if (shouldCreateRelease) {
+  if (wantsRelease && shouldPush) {
     githubRelease = await createRelease({
       tagName,
       title: tagName,
@@ -601,6 +608,21 @@ export async function executeRelease(
       log.githubReleaseId = githubRelease.releaseId;
       await writeTransactionLog(cwd, log);
     }
+  } else if (wantsRelease) {
+    // shouldPush is false — tag exists locally but never reached the
+    // remote, so GitHub can't attach a Release to it. Surface this
+    // instead of silently dropping the step.
+    const repo = `${plan.remote!.owner}/${plan.remote!.repo}`;
+    githubRelease = {
+      status: 'skipped',
+      reason:
+        'git push was skipped; push the tag manually with ' +
+        '`git push --follow-tags`, then run the printed command to ' +
+        'create the GitHub Release.',
+      manualCommand:
+        `gh release create ${tagName} --repo ${repo} ` +
+        `--title "${tagName}" --notes "..."`,
+    };
   }
 
   return {
