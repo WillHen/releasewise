@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-05-17
+
+### Fixed
+
+- `releasewise release --yes --no-push` now surfaces a skipped GitHub Release result with a manual `gh release create` command instead of silently dropping the step [#19](https://github.com/WillHen/releasewise/pull/19)
+- PR/issue references inside triple-backtick fenced code blocks in release notes are no longer rewritten into GitHub links [#18](https://github.com/WillHen/releasewise/pull/18)
+
 ## [0.4.0] - 2026-05-02
 
 ### Added
