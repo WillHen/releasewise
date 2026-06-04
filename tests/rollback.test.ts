@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
 import {
   readTransactionLog,
+  TransactionLogValidationError,
   transactionLogPath,
   writeTransactionLog,
 } from '../src/core/rollback.ts';
@@ -99,5 +100,45 @@ describe('readTransactionLog', () => {
     const loaded = await readTransactionLog(tmpDir);
 
     expect(loaded).toEqual(original);
+  });
+
+  /** Write raw bytes to the log path, bypassing the schema-checked writer. */
+  function writeRawLog(contents: string): void {
+    const path = transactionLogPath(tmpDir);
+    mkdirSync(join(tmpDir, '.releasewise'), { recursive: true });
+    writeFileSync(path, contents, 'utf8');
+  }
+
+  it('throws on invalid JSON instead of returning null', async () => {
+    writeRawLog('{ not valid json');
+
+    await expect(readTransactionLog(tmpDir)).rejects.toBeInstanceOf(
+      TransactionLogValidationError,
+    );
+  });
+
+  it('throws when a field has the wrong type', async () => {
+    writeRawLog(JSON.stringify({ ...sampleLog(), pushed: 'yes' }));
+
+    const err = await readTransactionLog(tmpDir).catch((e) => e);
+    expect(err).toBeInstanceOf(TransactionLogValidationError);
+    expect(String(err.message)).toContain('pushed');
+  });
+
+  it('throws when a required field is missing', async () => {
+    const { bumpCommitSha: _omit, ...incomplete } = sampleLog();
+    writeRawLog(JSON.stringify(incomplete));
+
+    const err = await readTransactionLog(tmpDir).catch((e) => e);
+    expect(err).toBeInstanceOf(TransactionLogValidationError);
+    expect(String(err.message)).toContain('bumpCommitSha');
+  });
+
+  it('throws when filesModified is not a string array', async () => {
+    writeRawLog(JSON.stringify({ ...sampleLog(), filesModified: 'nope' }));
+
+    await expect(readTransactionLog(tmpDir)).rejects.toBeInstanceOf(
+      TransactionLogValidationError,
+    );
   });
 });
