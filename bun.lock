@@ -5,7 +5,7 @@
     "": {
       "name": "releasewise",
       "dependencies": {
-        "@anthropic-ai/sdk": "^0.98.0",
+        "@anthropic-ai/sdk": "^0.102.0",
         "@google/genai": "^2.3.0",
         "citty": "^0.2.2",
         "openai": "^6.34.0",
@@ -24,7 +24,7 @@
     },
   },
   "packages": {
-    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.98.1", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-mqMQBMqAG0AoWStJEXrjDd3MrMyMiaIye9/5q2b3j5JxRF/2E7jgYlHSIJHiPj+4ztfsFH4Lcfj94WeXg2mAhg=="],
+    "@anthropic-ai/sdk": ["@anthropic-ai/sdk@0.102.0", "", { "dependencies": { "json-schema-to-ts": "^3.1.1", "standardwebhooks": "^1.0.0" }, "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "anthropic-ai-sdk": "bin/cli" } }, "sha512-cThh3KcPW3lzkFyTz1cjyhJvOVw45NkLMoowO2ZJ/76CBz44ADUon+NsjEc/PypAkARs72Xu8qxTnx6PAOTQUQ=="],
 
     "@babel/runtime": ["@babel/runtime@7.29.2", "", {}, "sha512-JiDShH45zKHWyGe4ZNVRrCjBz8Nh9TMmZG1kh4QTK8hCBTWBi8Da+i7s1fJw7/lYpM4ccepSNfqzZ/QvABBi5g=="],
 
