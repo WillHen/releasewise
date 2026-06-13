@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-06-13
+
+### Fixed
+
+- `releasewise undo` now raises a clear error with a recovery hint when `.releasewise/last-release.json` is corrupt, hand-edited, or contains invalid JSON, instead of silently feeding bad data into destructive git operations or reporting a misleading "no transaction log found"
+
 ## [0.4.1] - 2026-05-17
 
 ### Fixed
