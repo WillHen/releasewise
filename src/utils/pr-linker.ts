@@ -17,11 +17,14 @@
  *                      enriched text is a no-op.
  *     abc#123        — the `#` is preceded by a word character (mid-word
  *                      hash like a fragment or hash notation).
- *     `#123`         — inside a single-backtick inline code span. These
- *                      are usually describing the syntax itself (e.g.
- *                      "convert `#123` into links") and should not be
- *                      auto-linked. The tokenizer consumes the whole
- *                      code span in one shot so its contents are never
+ *     `#123`         — inside an inline code span. These are usually
+ *                      describing the syntax itself (e.g. "convert
+ *                      `#123` into links") and should not be auto-linked.
+ *                      A code span may be delimited by a run of any number
+ *                      of backticks (CommonMark uses `` ``#1`` `` when the
+ *                      content itself contains a backtick), and the closing
+ *                      run must be the same length. The tokenizer consumes
+ *                      the whole span in one shot so its contents are never
  *                      independently matched.
  *     ```…#123…```   — inside a triple-backtick fenced block. AI-generated
  *                      notes frequently include diffs or code samples where
@@ -42,15 +45,19 @@ import type { RemoteInfo } from '../types.ts';
 //   1. ```…``` — a triple-backtick fenced code block (or inline triple
 //                span). Non-greedy to a closing fence; an unclosed opener
 //                falls through and is ignored.
-//   2. `...`   — a single-backtick inline code span (no embedded backticks,
-//                no newlines). Captured verbatim and skipped.
+//   2. `…`     — an inline code span delimited by a run of one or more
+//                backticks (group 2 captures the opening run). The closing
+//                run must be the same length (`\2` backreference); the body
+//                spans no newlines and may contain shorter backtick runs.
+//                The whole span is captured verbatim and skipped.
 //   3. #N      — a bare PR/issue ref not preceded by a word char or `[`.
 //                Captured and replaced with a markdown link.
 //
 // Alternatives are evaluated left-to-right at each position, so if a `#N`
 // sits inside a code span or fenced block the span/fence is matched first
 // and consumes it — the ref never gets a chance to match independently.
-const TOKEN_REGEX = /(```[\s\S]*?```)|(`[^`\n]*`)|(?<![\w[])#(\d+)\b/g;
+const TOKEN_REGEX =
+  /(```[\s\S]*?```)|(`+)(?:[^`\n]|(?!\2)`)*?\2|(?<![\w[])#(\d+)\b/g;
 
 export function enrichPrLinks(text: string, remote: RemoteInfo | null): string {
   if (remote === null || text.length === 0) return text;
@@ -58,13 +65,15 @@ export function enrichPrLinks(text: string, remote: RemoteInfo | null): string {
   return text.replace(
     TOKEN_REGEX,
     (
-      _match,
+      match,
       fenced: string | undefined,
-      codeSpan: string | undefined,
+      ticks: string | undefined,
       num: string | undefined,
     ) => {
       if (fenced !== undefined) return fenced;
-      if (codeSpan !== undefined) return codeSpan;
+      // `ticks` (the opening backtick run) is defined iff the inline
+      // code-span alternative matched — return the whole span verbatim.
+      if (ticks !== undefined) return match;
       return `[#${num!}](${base}${num!})`;
     },
   );

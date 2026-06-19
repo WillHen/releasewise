@@ -205,6 +205,21 @@ describe('enrichPrLinks — non-matches', () => {
     expect(enrichPrLinks(input, github)).toBe(expected);
   });
 
+  it('does not link refs inside a double-backtick code span', () => {
+    // CommonMark uses a run of two backticks when the span content itself
+    // contains a backtick. The closing run must match the opening length,
+    // and a #N inside must not be auto-linked.
+    const input = 'use ``#5`` here';
+    expect(enrichPrLinks(input, github)).toBe(input);
+  });
+
+  it('handles a double-backtick span whose body contains a backtick', () => {
+    const input = 'render ``a ` b #5`` verbatim, but link #6';
+    expect(enrichPrLinks(input, github)).toBe(
+      'render ``a ` b #5`` verbatim, but link [#6](https://github.com/acme/widgets/pull/6)',
+    );
+  });
+
   it('treats an inline triple-backtick span as a code span', () => {
     const input = 'use ```#7``` literally, but link #8';
     expect(enrichPrLinks(input, github)).toBe(
