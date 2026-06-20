@@ -58,6 +58,35 @@ describe('createLogger', () => {
   });
 });
 
+describe('createLogger color', () => {
+  function captureColor(level: LogLevel, color: boolean) {
+    let output = '';
+    const logger = createLogger(
+      level,
+      (t) => {
+        output += t;
+      },
+      color,
+    );
+    return { logger, output: () => output };
+  }
+
+  it('emits ANSI escapes when color is enabled', () => {
+    const { logger, output } = captureColor('verbose', true);
+    logger.warn('odd');
+    expect(output()).toContain('\x1b[');
+    // plain text stays contiguous despite the surrounding codes
+    expect(output()).toContain('Warning: odd');
+  });
+
+  it('emits no ANSI escapes when color is disabled', () => {
+    const { logger, output } = captureColor('verbose', false);
+    logger.error('boom');
+    expect(output()).not.toContain('\x1b[');
+    expect(output()).toContain('Error: boom');
+  });
+});
+
 describe('resolveLogLevel', () => {
   it('defaults to normal', () => {
     expect(resolveLogLevel({})).toBe('normal');

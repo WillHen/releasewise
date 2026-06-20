@@ -8,9 +8,28 @@
  *
  * The logger writes to an injected `stderr` sink so tests can capture output
  * without touching process.stderr.
+ *
+ * Output is colorized with picocolors when writing to a real terminal. Color
+ * is auto-disabled when stderr is not a TTY (piped output, captured in tests),
+ * when `NO_COLOR` is set, and re-enabled by `FORCE_COLOR`. Each message is
+ * wrapped as a single colored span so the plain text stays contiguous.
  */
 
+import { createColors } from 'picocolors';
+
 export type LogLevel = 'quiet' | 'normal' | 'verbose';
+
+/**
+ * Decide whether ANSI color should be emitted. Honors the de-facto standard
+ * `NO_COLOR` / `FORCE_COLOR` env vars and otherwise keys off whether stderr —
+ * the sink the logger writes to — is an interactive terminal.
+ */
+export function colorSupported(): boolean {
+  const env = process.env;
+  if (env.NO_COLOR) return false;
+  if (env.FORCE_COLOR) return env.FORCE_COLOR !== '0';
+  return Boolean(process.stderr.isTTY) && env.TERM !== 'dumb';
+}
 
 export interface Logger {
   /** Step progress: "Collecting inputs...", "Classifying commits..." */
@@ -28,26 +47,28 @@ export interface Logger {
 export function createLogger(
   level: LogLevel,
   stderr: (text: string) => void = (t) => process.stderr.write(t),
+  color: boolean = colorSupported(),
 ): Logger {
+  const c = createColors(color);
   return {
     level,
     step(message: string) {
       if (level !== 'quiet') {
-        stderr(`  ${message}\n`);
+        stderr(`  ${c.dim('→')} ${message}\n`);
       }
     },
     warn(message: string) {
       if (level !== 'quiet') {
-        stderr(`Warning: ${message}\n`);
+        stderr(`${c.yellow(`⚠ Warning: ${message}`)}\n`);
       }
     },
     debug(message: string) {
       if (level === 'verbose') {
-        stderr(`[debug] ${message}\n`);
+        stderr(`${c.dim(`[debug] ${message}`)}\n`);
       }
     },
     error(message: string) {
-      stderr(`Error: ${message}\n`);
+      stderr(`${c.red(c.bold(`✗ Error: ${message}`))}\n`);
     },
   };
 }
