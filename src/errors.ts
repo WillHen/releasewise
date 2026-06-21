@@ -19,6 +19,8 @@
  * `CodedError`.
  */
 
+import { getColors } from './utils/colors.ts';
+
 export const ErrorCodes = {
   CONFIG_MISSING: 'ERR_CONFIG_MISSING',
   CONFIG_UNREADABLE: 'ERR_CONFIG_UNREADABLE',
@@ -131,8 +133,15 @@ export async function withStep<T>(
 /**
  * Format any error for display to the user. Pure function — returns the
  * full stderr string including the trailing newline.
+ *
+ * `color` defaults to off so snapshot tests stay byte-stable; the CLI layer
+ * passes `colorSupported(process.stderr)` to enable it on a real terminal.
  */
-export function formatError(err: unknown, opts: { verbose: boolean }): string {
+export function formatError(
+  err: unknown,
+  opts: { verbose: boolean; color?: boolean },
+): string {
+  const c = getColors(opts.color ?? false);
   const primary =
     findReleaseError(err) ??
     (isErrorLike(err) ? (err as CodedError) : undefined);
@@ -143,18 +152,24 @@ export function formatError(err: unknown, opts: { verbose: boolean }): string {
   const step = primary?.step;
 
   const lines: string[] = [];
-  lines.push(step ? `Error [${code}] during ${step}:` : `Error [${code}]:`);
+  lines.push(
+    c.red(
+      c.bold(
+        step ? `Error [${code}] during ${step}:` : `Error [${code}]:`,
+      ),
+    ),
+  );
   for (const l of String(message).split('\n')) {
     lines.push(`  ${l}`);
   }
   if (hint) {
     lines.push('');
-    lines.push(`Hint: ${hint}`);
+    lines.push(c.cyan(`Hint: ${hint}`));
   }
 
   if (opts.verbose) {
     lines.push('');
-    lines.push('Cause chain:');
+    lines.push(c.dim('Cause chain:'));
     let cur: unknown = err;
     for (let depth = 0; depth < MAX_CAUSE_DEPTH && cur; depth++) {
       const e = cur as CodedError;

@@ -194,6 +194,22 @@ describe('formatError normal mode', () => {
     expect(lines[1]).toBe('  line one');
     expect(lines[2]).toBe('  line two');
   });
+
+  it('emits ANSI codes only when color is enabled', () => {
+    const err = new ReleaseError({
+      code: ErrorCodes.GIT_PUSH_FAILED,
+      step: 'push',
+      message: 'boom',
+      hint: 'retry',
+    });
+    const plain = formatError(err, { verbose: false });
+    expect(plain).not.toContain('[');
+
+    const colored = formatError(err, { verbose: false, color: true });
+    expect(colored).toContain('[');
+    expect(colored).toContain('ERR_GIT_PUSH_FAILED');
+    expect(colored).toContain('retry');
+  });
 });
 
 describe('formatError verbose mode', () => {

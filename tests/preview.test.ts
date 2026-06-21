@@ -372,4 +372,14 @@ describe('formatHumanPreview', () => {
       expect(out.charCodeAt(i)).toBeLessThan(128);
     }
   });
+
+  it('emits ANSI codes when color is enabled', () => {
+    const out = formatHumanPreview(plan({ warnings: ['something'] }), {
+      color: true,
+    });
+    expect(out).toContain('[');
+    // Plain content is still present alongside the codes.
+    expect(out).toContain('Release plan (dry run)');
+    expect(out).toContain('something');
+  });
 });

@@ -22,6 +22,7 @@ import {
 } from '../core/rollback.ts';
 import { formatError } from '../errors.ts';
 import type { TransactionLog } from '../types.ts';
+import { colorSupported, getColors } from '../utils/colors.ts';
 
 // --------- Public shape ---------
 
@@ -137,8 +138,11 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
     await resetHard(parent, { cwd });
 
     // 8. Report success.
+    const c = getColors(
+      deps.stdout === undefined && colorSupported(process.stdout),
+    );
     stdout(
-      `Undone: ${log.tagName ?? log.toVersion}\n` +
+      `${c.green(c.bold(`Undone: ${log.tagName ?? log.toVersion}`))}\n` +
         `  Tag deleted:    ${log.tagName ?? '(none)'}\n` +
         `  Commit reverted: ${log.bumpCommitSha?.slice(0, 7) ?? '(none)'}\n` +
         `  Version restored: ${log.fromVersion}\n`,
@@ -146,7 +150,12 @@ export async function runUndo(deps: RunUndoDeps = {}): Promise<RunUndoResult> {
 
     return { exitCode: 0 };
   } catch (err) {
-    stderr(formatError(err, { verbose: deps.verbose === true }));
+    stderr(
+      formatError(err, {
+        verbose: deps.verbose === true,
+        color: deps.stderr === undefined && colorSupported(process.stderr),
+      }),
+    );
     return { exitCode: 1 };
   }
 }

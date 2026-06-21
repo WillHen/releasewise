@@ -15,21 +15,11 @@
  * wrapped as a single colored span so the plain text stays contiguous.
  */
 
-import { createColors } from 'picocolors';
+import { colorSupported, getColors } from './colors.ts';
+
+export { colorSupported };
 
 export type LogLevel = 'quiet' | 'normal' | 'verbose';
-
-/**
- * Decide whether ANSI color should be emitted. Honors the de-facto standard
- * `NO_COLOR` / `FORCE_COLOR` env vars and otherwise keys off whether stderr —
- * the sink the logger writes to — is an interactive terminal.
- */
-export function colorSupported(): boolean {
-  const env = process.env;
-  if (env.NO_COLOR) return false;
-  if (env.FORCE_COLOR) return env.FORCE_COLOR !== '0';
-  return Boolean(process.stderr.isTTY) && env.TERM !== 'dumb';
-}
 
 export interface Logger {
   /** Step progress: "Collecting inputs...", "Classifying commits..." */
@@ -47,9 +37,9 @@ export interface Logger {
 export function createLogger(
   level: LogLevel,
   stderr: (text: string) => void = (t) => process.stderr.write(t),
-  color: boolean = colorSupported(),
+  color: boolean = colorSupported(process.stderr),
 ): Logger {
-  const c = createColors(color);
+  const c = getColors(color);
   return {
     level,
     step(message: string) {
