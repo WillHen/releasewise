@@ -154,9 +154,7 @@ export function formatError(
   const lines: string[] = [];
   lines.push(
     c.red(
-      c.bold(
-        step ? `Error [${code}] during ${step}:` : `Error [${code}]:`,
-      ),
+      c.bold(step ? `Error [${code}] during ${step}:` : `Error [${code}]:`),
     ),
   );
   for (const l of String(message).split('\n')) {
