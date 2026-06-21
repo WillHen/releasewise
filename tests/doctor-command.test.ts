@@ -198,4 +198,15 @@ describe('runDoctor', () => {
     expect(sinks.out).toContain('[+]'); // pass
     expect(sinks.out).toContain('[!]'); // warn
   });
+
+  it('stays plain by default but emits ANSI when color is enabled', async () => {
+    const plainSinks = capture();
+    await runDoctor({ ...passingDeps(), ...plainSinks });
+    expect(plainSinks.out).not.toContain('[');
+
+    const colorSinks = capture();
+    await runDoctor({ ...passingDeps(), ...colorSinks, color: true });
+    expect(colorSinks.out).toContain('[');
+    expect(colorSinks.out).toContain('[+]'); // marker stays contiguous
+  });
 });

@@ -50,6 +50,7 @@ import {
 } from '../core/orchestrator.ts';
 import { formatError } from '../errors.ts';
 import type { AIProvider, BumpType } from '../types.ts';
+import { colorSupported, getColors } from '../utils/colors.ts';
 import { estimateTokens } from '../utils/token-estimator.ts';
 import { formatHumanPreview, formatJsonPreview } from '../utils/preview.ts';
 
@@ -117,6 +118,9 @@ export async function runRelease(
 ): Promise<RunReleaseResult> {
   const stdout = deps.stdout ?? ((t: string) => process.stdout.write(t));
   const stderr = deps.stderr ?? ((t: string) => process.stderr.write(t));
+  // Color only when writing to the real terminal; an injected stdout sink
+  // (tests, redirection) keeps preview/error output plain.
+  const color = deps.stdout === undefined && colorSupported(process.stdout);
   const env = deps.env ?? process.env;
   const cwd = deps.cwd ?? process.cwd();
   const loadConfig = deps.loadConfig ?? realLoadConfig;
@@ -220,14 +224,14 @@ export async function runRelease(
       if (args.json) {
         stdout(`${JSON.stringify(formatJsonPreview(merged), null, 2)}\n`);
       } else {
-        stdout(`${formatHumanPreview(merged)}\n`);
+        stdout(`${formatHumanPreview(merged, { color })}\n`);
       }
       return { exitCode: 0 };
     }
 
     // 9. Show the plan before executing so the user sees what's happening.
     if (!args.json) {
-      stdout(`${formatHumanPreview(merged, { dryRun: false })}\n\n`);
+      stdout(`${formatHumanPreview(merged, { dryRun: false, color })}\n\n`);
     }
 
     // 10. Execute.
@@ -271,8 +275,9 @@ export async function runRelease(
           `  Release:   failed via ${result.githubRelease.method} — ${result.githubRelease.error}\n` +
           `             Retry manually: ${result.githubRelease.manualCommand}\n`;
       }
+      const c = getColors(color);
       stdout(
-        `\nReleased ${result.tagName}\n` +
+        `\n${c.green(c.bold(`Released ${result.tagName}`))}\n` +
           `  Commit:    ${result.commitSha.slice(0, 7)}\n` +
           `  Tag:       ${result.tagName}\n` +
           `  Changelog: ${result.changelogPath}\n` +
@@ -283,7 +288,12 @@ export async function runRelease(
 
     return { exitCode: 0 };
   } catch (err) {
-    stderr(formatError(err, { verbose: Boolean(args.verbose) }));
+    stderr(
+      formatError(err, {
+        verbose: Boolean(args.verbose),
+        color: deps.stderr === undefined && colorSupported(process.stderr),
+      }),
+    );
     return { exitCode: 1 };
   }
 }

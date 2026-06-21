@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-06-20
+
+### Added
+
+- CLI output is now colorized: step messages, warnings, debug lines, and errors each render in a distinct color when writing to an interactive terminal
+
+### Changed
+
+- `NO_COLOR` and `FORCE_COLOR` env vars are now honored to control CLI color output; color is automatically disabled when stderr is not a TTY
+
+### Fixed
+
+- `releasewise undo` now validates `.releasewise/last-release.json` with a schema before running destructive git operations; a corrupt or hand-edited log now surfaces a clear error with a recovery hint instead of silently feeding bad data into a reset [#24](https://github.com/WillHen/releasewise/pull/24)
+- PR/issue refs inside multi-backtick inline code spans (e.g. `` ``[#5](https://github.com/WillHen/releasewise/pull/5)`` ``) were incorrectly auto-linked; the regex now matches any-length backtick runs with a same-length closing run [#26](https://github.com/WillHen/releasewise/pull/26)
+
 ## [0.4.1] - 2026-05-17
 
 ### Fixed

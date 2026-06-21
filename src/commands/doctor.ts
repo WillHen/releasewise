@@ -19,6 +19,7 @@ import {
   type ResolvedApiKey,
 } from '../core/config-resolver.ts';
 import { isGitRepo as realIsGitRepo } from '../core/git.ts';
+import { colorSupported, getColors } from '../utils/colors.ts';
 
 // --------- Public shape ---------
 
@@ -26,6 +27,8 @@ export interface RunDoctorDeps {
   cwd?: string;
   env?: Record<string, string | undefined>;
   stdout?: (text: string) => void;
+  /** Emit ANSI color. Defaults to on for a real stdout TTY, off otherwise. */
+  color?: boolean;
   loadConfig?: (opts: { cwd?: string }) => LoadedConfig;
   resolveApiKey?: (
     config: LoadedConfig['config'],
@@ -52,6 +55,11 @@ export async function runDoctor(
   deps: RunDoctorDeps = {},
 ): Promise<RunDoctorResult> {
   const stdout = deps.stdout ?? ((t: string) => process.stdout.write(t));
+  // Default color on only when writing to the real stdout TTY; an injected
+  // sink (tests, redirection) keeps output plain unless explicitly overridden.
+  const color =
+    deps.color ?? (deps.stdout === undefined && colorSupported(process.stdout));
+  const c = getColors(color);
   const cwd = deps.cwd ?? process.cwd();
   const env = deps.env ?? process.env;
   const loadConfig = deps.loadConfig ?? realLoadConfig;
@@ -144,19 +152,21 @@ export async function runDoctor(
 
   // Render
   const statusIcons = { pass: '+', fail: 'x', warn: '!' };
+  const iconColor = { pass: c.green, fail: c.red, warn: c.yellow };
   for (const check of checks) {
-    stdout(
-      `  [${statusIcons[check.status]}] ${check.name}: ${check.message}\n`,
-    );
+    // Color the whole `[+]`/`[x]`/`[!]` token so the bracketed marker stays
+    // contiguous for callers that grep on it.
+    const icon = iconColor[check.status](`[${statusIcons[check.status]}]`);
+    stdout(`  ${icon} ${c.bold(check.name)}: ${check.message}\n`);
   }
 
-  const hasFail = checks.some((c) => c.status === 'fail');
+  const hasFail = checks.some((check) => check.status === 'fail');
   const exitCode = hasFail ? 1 : 0;
 
   stdout(
     hasFail
-      ? '\nSome checks failed. Fix the issues above and re-run.\n'
-      : '\nAll checks passed.\n',
+      ? `\n${c.red('Some checks failed. Fix the issues above and re-run.')}\n`
+      : `\n${c.green('All checks passed.')}\n`,
   );
 
   return { exitCode, checks };

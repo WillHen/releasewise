@@ -4,9 +4,9 @@
  * Two formats:
  *
  *   - `formatHumanPreview(plan)` — multi-section plaintext for
- *     the default `releasewise release` preview. Deliberately
- *     ASCII-only and color-free so snapshot tests and CI logs
- *     stay stable.
+ *     the default `releasewise release` preview. ASCII-only; color
+ *     is opt-in via `{ color: true }` and defaults to off so snapshot
+ *     tests and CI logs stay stable.
  *
  *   - `formatJsonPreview(plan)` — a JSON-serializable object for
  *     `--json`. This is the stable contract external tooling will
@@ -20,6 +20,7 @@
  */
 import type { ReleasePlan } from '../core/orchestrator.ts';
 import type { BumpType, RemoteInfo } from '../types.ts';
+import { getColors, type Colors } from './colors.ts';
 
 // --------- JSON output shape ---------
 
@@ -137,7 +138,8 @@ const RULE = '-'.repeat(60);
 
 /**
  * Render a human-readable multi-section preview of a release plan.
- * ASCII-only, no colors — keep it snapshot-stable and CI-friendly.
+ * ASCII-only. Color is opt-in via `{ color: true }` and defaults to off
+ * to keep it snapshot-stable and CI-friendly.
  *
  * `dryRun` defaults to `true` — the original use case. Pass
  * `{ dryRun: false }` to reuse the same layout as the pre-execute plan
@@ -173,21 +175,22 @@ const RULE = '-'.repeat(60);
  */
 export function formatHumanPreview(
   plan: ReleasePlan,
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; color?: boolean } = {},
 ): string {
-  const { dryRun = true } = options;
+  const { dryRun = true, color = false } = options;
+  const c = getColors(color);
   const lines: string[] = [];
-  lines.push(RULE);
-  lines.push(dryRun ? 'Release plan (dry run)' : 'Release plan');
-  lines.push(RULE);
+  lines.push(c.dim(RULE));
+  lines.push(c.bold(dryRun ? 'Release plan (dry run)' : 'Release plan'));
+  lines.push(c.dim(RULE));
   lines.push('');
 
   // --- Header block ---
-  lines.push(...renderHeader(plan));
+  lines.push(...renderHeader(plan, c));
   lines.push('');
 
   // --- Commits ---
-  lines.push(...renderCommits(plan));
+  lines.push(...renderCommits(plan, c));
   lines.push('');
 
   // --- Release notes ---
@@ -205,31 +208,40 @@ export function formatHumanPreview(
   lines.push('');
 
   // --- Diff summary ---
-  lines.push(...renderDiffSummary(plan));
+  lines.push(...renderDiffSummary(plan, c));
 
   // --- Warnings (trailing so they're the last thing the user sees) ---
   if (plan.warnings.length > 0) {
     lines.push('');
-    lines.push('Warnings:');
+    lines.push(c.yellow('Warnings:'));
     for (const w of plan.warnings) {
-      lines.push(`  ! ${w}`);
+      lines.push(c.yellow(`  ! ${w}`));
     }
   }
 
   // --- Footer (dry run only) ---
   if (dryRun) {
     lines.push('');
-    lines.push(RULE);
-    lines.push('This was a dry run. No files or git state were modified.');
-    lines.push(RULE);
+    lines.push(c.dim(RULE));
+    lines.push(
+      c.dim('This was a dry run. No files or git state were modified.'),
+    );
+    lines.push(c.dim(RULE));
   }
 
   return lines.join('\n');
 }
 
+/** Color a bump label by severity: major=red, minor=yellow, patch/none=green. */
+function colorBump(c: Colors, bump: BumpType, text: string): string {
+  if (bump === 'major') return c.red(text);
+  if (bump === 'minor') return c.yellow(text);
+  return c.green(text);
+}
+
 // --------- Helpers ---------
 
-function renderHeader(plan: ReleasePlan): string[] {
+function renderHeader(plan: ReleasePlan, c: Colors): string[] {
   const bumpLabel = plan.bumpForced
     ? `${plan.bump} (forced)`
     : `${plan.bump} (auto)`;
@@ -237,40 +249,44 @@ function renderHeader(plan: ReleasePlan): string[] {
     ? `${plan.baseRef} (first release)`
     : plan.baseRef;
   const lines = [
-    `Bump:     ${bumpLabel}`,
-    `Version:  ${plan.currentVersion} -> ${plan.nextVersion}`,
+    `Bump:     ${colorBump(c, plan.bump, bumpLabel)}`,
+    `Version:  ${plan.currentVersion} -> ${c.bold(plan.nextVersion)}`,
     `Base:     ${baseLabel}`,
     `Date:     ${plan.date}`,
   ];
   if (plan.remote) {
-    lines.push(`Remote:   ${plan.remote.webUrl}`);
+    lines.push(`Remote:   ${c.cyan(plan.remote.webUrl)}`);
   }
   return lines;
 }
 
-function renderCommits(plan: ReleasePlan): string[] {
+function renderCommits(plan: ReleasePlan, c: Colors): string[] {
   const lines: string[] = [];
   lines.push(`Commits (${plan.commits.length}):`);
   if (plan.commits.length === 0) {
-    lines.push('  (none)');
+    lines.push(c.dim('  (none)'));
     return lines;
   }
   // Column widths: sha (7) + bump (max 5: "major", "minor", "patch", "none")
   const bumpWidth = 5;
-  for (const c of plan.commits) {
-    const bumpCol = c.bump.padEnd(bumpWidth);
+  for (const commit of plan.commits) {
+    const bumpCol = colorBump(c, commit.bump, commit.bump.padEnd(bumpWidth));
     const rationale =
-      c.source === 'ai' && c.rationale ? `  [AI: ${c.rationale}]` : '';
-    lines.push(`  ${c.shortSha.padEnd(8)}${bumpCol}  ${c.subject}${rationale}`);
+      commit.source === 'ai' && commit.rationale
+        ? c.dim(`  [AI: ${commit.rationale}]`)
+        : '';
+    lines.push(
+      `  ${c.dim(commit.shortSha.padEnd(8))}${bumpCol}  ${commit.subject}${rationale}`,
+    );
   }
   return lines;
 }
 
-function renderDiffSummary(plan: ReleasePlan): string[] {
+function renderDiffSummary(plan: ReleasePlan, c: Colors): string[] {
   const d = plan.truncatedDiff;
   const lines = [
     `Diff: ${d.originalTokens} -> ${d.finalTokens} tokens${
-      d.truncated ? ' (truncated)' : ''
+      d.truncated ? c.yellow(' (truncated)') : ''
     }`,
   ];
   // Show budget-driven drops and privacy redactions separately so users
