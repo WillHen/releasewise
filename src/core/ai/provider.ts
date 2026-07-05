@@ -77,6 +77,10 @@ export function getProvider(opts: GetProviderOptions): AIProvider {
       });
     }
     case 'gemini': {
+      // `generateContent` lives on the `.models` sub-module of a
+      // GoogleGenAI instance (`ai.models.generateContent(...)`), NOT on
+      // the instance itself. Pass `.models` so the adapter's
+      // `client.generateContent(...)` call resolves to a real function.
       const client =
         opts.geminiClient ??
         (new GoogleGenAI({
@@ -84,7 +88,7 @@ export function getProvider(opts: GetProviderOptions): AIProvider {
           ...(config.ai.baseUrl
             ? { httpOptions: { baseUrl: config.ai.baseUrl } }
             : {}),
-        }) as unknown as GeminiClient);
+        }).models as unknown as GeminiClient);
       return createGeminiProvider({
         client,
         model: config.ai.model,

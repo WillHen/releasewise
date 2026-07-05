@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 
+import { GoogleGenAI } from '@google/genai';
+
 import type { AnthropicClient } from '../src/core/ai/anthropic.ts';
 import type { GeminiClient } from '../src/core/ai/gemini.ts';
 import type { OpenAIClient } from '../src/core/ai/openai.ts';
@@ -198,5 +200,21 @@ describe('getProvider', () => {
     expect(result.text).toBe('from gemini fake');
     expect(result.inputTokens).toBe(8);
     expect(result.outputTokens).toBe(9);
+  });
+
+  // Regression: the factory's non-injected gemini path relies on
+  // `generateContent` living on the GoogleGenAI `.models` sub-module, NOT
+  // on the instance itself. If a future SDK bump moves it — or the `.models`
+  // access is dropped — the production path throws
+  // `client.generateContent is not a function`. Injected-fake tests can't
+  // catch that (they bypass construction), so lock the SDK contract here.
+  it('resolves generateContent via the .models sub-module the factory uses', () => {
+    const ai = new GoogleGenAI({ apiKey: 'dummy' });
+    // The wrong (pre-fix) access — instance-level — must be absent.
+    expect(
+      (ai as unknown as { generateContent?: unknown }).generateContent,
+    ).toBeUndefined();
+    // The access the factory actually relies on must be callable.
+    expect(typeof ai.models.generateContent).toBe('function');
   });
 });
