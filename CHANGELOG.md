@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-27
+
+### Fixed
+
+- Users with `ai.provider` set to `"gemini"` crashed with `client.generateContent is not a function` on every AI call; the Gemini provider now correctly resolves `generateContent` via the `.models` sub-module of the SDK instance
+
 ## [0.6.0] - 2026-07-02
 
 ### Added
